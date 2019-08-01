@@ -1,96 +1,47 @@
+#!/usr/bin/python3
+
+import urllib.parse
+
 import bs4
 import requests
-import urllib.parse
-import logging
 
-GOOGLE = "https://www.google.com/search?q=%s "
+GOOGLE = "https://www.google.com/"
 
 
-class Search:
-    def __init__(self, url):
-        self.url = url
-        self.setup_url()
-
-    def setup_url(self, string=None):
-        if string is None:
-            string_ = self.url
-        else:
-            string_ = string
-        add_plus = string_.replace(" ", "+")
-        return GOOGLE % add_plus
-
-    def search(self, url=None):
-        if url is None:
-            url_ = self.url
-        else:
-            url_ = url
-        data = requests.get(url_)
-        soup = bs4.BeautifulSoup(data.text, "html5lib")
-        return soup
-
-    def get_links(self, url=None):
-        if url is None:
-            url_ = self.url
-        else:
-            url_ = url
-        soup = Search.search(self, self.setup_url(url_))
-        results = set()
-        anchor = soup.find("div", id='search').findAll("a")
-        for url in anchor:
-            link = url["href"]
-            ps = self.parse_links(link)
-
-            if ps is None:
-                continue
-            else:
-                results.add(ps)
-
-        return results
-
-    def parse_links(self, link):
-        a = link.strip("/url?")
-        b = urllib.parse.parse_qs(a)['q'][0]
-        if not b.startswith("http"):
-            logging.log(3, "Url %s id not valid http" % b)
-            return
-        parse = urllib.parse.urlsplit(b)
-        if 'google' not in parse.netloc:
-            if parse.query:
-                return parse.scheme + "://" + parse.netloc + parse.path + "?" + parse.query
-            else:
-                return parse.scheme + "://" + parse.netloc + parse.path
-
-    def get_titles_with_links(self, query=None):
-        if query is None:
-            query_ = self.url
-        else:
-            query_ = query
-
-        soup = Search.search(self, self.setup_url(query_))
-        anchor = soup.find(id='search').findAll("a")
+def get_request(request):
+    url = parse_url(request)
+    return requests.get(url).content
 
 
-        url_set = set()
-        num = 0
-        for url in anchor:
-            link = url["href"]
-            ps = self.parse_links(link)
-
-            if ps is None:
-                continue
-            elif url_set.add(ps) is None:
-                continue
-            else:
-                url_set.add(ps)
-
-            num += 1
-
-        print(url_set)
-
-    @staticmethod
-    def get_hits(soup):
-        tag = soup.find_all(attrs={"class": "sd", "id": "resultStats"})[0]
-        return int(tag.text.split()[1].replace(',', ''))
+def parse_url(url):
+    abc = "search?q="
+    url = urllib.parse.urljoin(GOOGLE, abc + url)
+    return url
 
 
-print(Search("Indonesia Earthquake").get_titles_with_links())
+class Search():
+    def __init__(self, query, ln="en", images=False, pages=1):
+        self.query = query
+        self.lang = ln
+        self.images = images
+        self.pages = pages
+        self.search()
+
+    def search(self):
+        """
+        Search Google :)
+        Did not find a good enough module so i did what I do best
+        (Hopefully better than cooking)
+        Made my own :) :)
+        Happy non-api Googleing
+        """
+        results = []
+
+        qry_rslt = get_request(self.query)
+        soup_parser = bs4.BeautifulSoup(qry_rslt, "lxml")
+        for soup in soup_parser.find_all("div", atts={"id": "search"}):
+            pass
+        print(results)
+
+
+Search("Hello")
