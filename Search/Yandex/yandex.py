@@ -1,18 +1,16 @@
 import yandex_search
 
-USER = "shadedke"
-
-API = "03.795663490:47885945d89ff5f045263746359fa652"
 
 
 class Search:
-    def __init__(self, param):
+    def __init__(self, param, user, api):
         self.param = param
-
+        self.user = user
+        self.api = api
         self.setup_yandex()
 
     def setup_yandex(self):
-        self.yandex = yandex_search.Yandex(api_user=USER, api_key=API)
+        self.yandex = yandex_search.Yandex(api_user=self.user, api_key=self.api)
 
     def search(self):
         return self.yandex.search(self.param)
@@ -29,4 +27,3 @@ class Search:
         it = self.yandex.search(self.param+"'images'")
         print(it.items)
 
-Search("indonesia earthquake").urls()
