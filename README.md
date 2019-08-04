@@ -1,6 +1,6 @@
 # Groove
 Its `Groove-tastically amaizing`
-
+![](/mnt/Home/Users/Caleb%20Etemesi/Documents/Groove/Logo.png)
 This is hopefully the best scraper or multi-crawler out there
 
 We literally ~~scrap~~ find everything and anything in the internet
