@@ -12,4 +12,4 @@
 
 That's all from this side
 
-Happy Googleling :computer: 
+Happy Googleing :computer: 
