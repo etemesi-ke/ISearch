@@ -1,11 +1,8 @@
-import atexit
 import re
 import sys
 
 import bs4
 import requests
-
-from Browser import brw
 
 ENCODING = sys.getfilesystemencoding()
 BASE = "https://duckduckgo.com/html"
@@ -128,7 +125,7 @@ class Search:
             # Request next page
             self.duck = DuckUrl(self.duck.query, page)
             self.dict_url = self.duck.dict_opt
-            self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+            self.data = requests.get(BASE, headers=self.headers, params=self.dict_url)
             self.parse_source()
             self.next()
         else:
@@ -147,14 +144,8 @@ class Search:
         :return:
             """
         # Better if we re fetch our request with a web browser to get an already formatted page
-        opt = brw.Options()
-        opt.add_argument("--headless")
-        brow = brw.Browser(options=opt)
-        atexit.register(brow.quit)
-        brow.request('POST', BASE, data=self.dict_url)
-        data = brow.page_source
-        formatted = data.replace("'", '"')
-        parser = bs4.BeautifulSoup(formatted, "lxml")
+
+        parser = bs4.BeautifulSoup(self.data.content, "lxml")
         for anchors in parser.find_all("a", attrs={"href": re.compile("^http")}):
             # Set all the A tags with the target = "_blank" To open links in a new tab
             anchors["target"] = "_blank"
