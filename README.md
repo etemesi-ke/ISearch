@@ -9,6 +9,7 @@ Search the world frm the comfort of your command line
 ### Features of Groove
 - We got a lit command line interface built using urwid checkout that project [here](https://github.com/urwid/urwid)
 - Ability to fetch next results of a search query(ability to fetch previous search results is in the implementation stage)
+- Colors (Because we all love colors)
 - Ability to choose which search engine to use( Right now limited to Google and DuckDuckGo) 
  - Fast Search using command line options
  - Simple exit button
