@@ -1,5 +1,3 @@
-import re
-
 import bs4
 import requests
 
@@ -32,16 +30,9 @@ class DuckUrl:
     @property
     def dict_opt(self):
         """
-        :return: Full url of the duck duck go request
+        :return: Full options of the DuckDuckGo request
         """
         return self.dict
-
-    @property
-    def netloc(self):
-        """
-        :return: Hostname aka netloc
-        """
-        return BASE
 
     @property
     def query(self):
@@ -138,29 +129,6 @@ class Search:
             self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
             self.parse_source()
             return self.next()
-
-    def previous(self):
-        pass
-
-    def generate_iframe(self):
-        """
-        Generate an iframe tag to embed the html we got from the Google result
-        :return:
-            """
-        # Better if we re-fetch our request with a web browser to get an already formatted page
-
-        parser = bs4.BeautifulSoup(self.data.content, "lxml")
-        for anchors in parser.find_all("a", attrs={"href": re.compile("^http")}):
-            # Set all the <a> tags with the target = "_blank" To open links in a new tab
-            anchors["target"] = "_blank"
-        for links in parser.find_all("link", attrs={"href": re.compile("[a-zA-Z]")}):
-            if hasattr(links, "href"):
-                links["href"] = "https://duckduckgo.com/" + links.get('href')
-        for src in parser.find_all(attrs={"src": re.compile("[a-zA-Z]")}):
-            src["src"] = "https://duckduckgo.com/" + src.get('src')
-        data_ = """<iframe  style='border:none;width:48%;height:-webkit-fill-available;' srcdoc='{}' ></iframe>""" \
-            .format(parser)
-        return data_
 
     @property
     def name(self):
