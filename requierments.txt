@@ -2,3 +2,5 @@ advancedhttpserver
 selenium
 bs4
 lxml
+urwid
+requests
