@@ -1,10 +1,8 @@
 import re
-import sys
 
 import bs4
 import requests
 
-ENCODING = sys.getfilesystemencoding()
 BASE = "https://duckduckgo.com/html"
 
 
@@ -51,11 +49,11 @@ class DuckUrl:
 
     def construct_url(self):
         """
-        Function to implement data for Duck Duck Go requests
-        Duck duck go /html page accepts  POST requests to return data
+        Function to implement data for DuckDuckGo requests
+        DuckDuckGo /html page accepts  POST requests to return data
         """
 
-        if self.page is not 0 and 1:
+        if self.page > 1:
             self.dict.__setitem__("s", str(self.page * 30))
             self.dict.__setitem__("nextParams", '')
             self.dict.__setitem__('v', 'l')
@@ -67,16 +65,16 @@ class DuckUrl:
 
 
 class Search:
-    def __init__(self, query):
+    def __init__(self, query, **kwargs):
         self.query = query
-        self.duck = DuckUrl(query)
+        self.duck = DuckUrl(query, **kwargs)
         self.dict_url = self.duck.dict_opt
         self.headers = {'User-Agent':
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36'}
         self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
-        # Decode bytes into string
         # List for extra results
+        self.first_run = True
         self._extra = []
 
     def quit(self):
@@ -101,11 +99,14 @@ class Search:
         """
         Function to fetch the next 10 results
         """
-        # Duck duck go are very generous in their first page returns
-        # They give us 30 results  in the result, so if the first 10 results were printed
-        # The remaining 20 are stored in the extra slot(thanks to a lot of slicing)
+        # DuckDuckGo are very generous in their first page returns
+        # They give us 30 results  in  each search. 10 results should be  printed
+        # The remaining 20 are stored in the extra slot (thanks to a lot of slicing)
         # So the first thing we can do is to return the data stored in the extra if there is
-        # If there isn't send a new request and repeat the extra thing
+        # If there isn't send a new request and repeat storing and slicing n returning
+        if self.first_run:
+            self.parse_source()
+            self.first_run = False
         if self._extra:
             var = []
             for i in range(10):
@@ -127,7 +128,7 @@ class Search:
             self.dict_url = self.duck.dict_opt
             self.data = requests.get(BASE, headers=self.headers, params=self.dict_url)
             self.parse_source()
-            self.next()
+            return self.next()
         else:
             # We are in page 1
             page = 2
@@ -136,25 +137,28 @@ class Search:
             self.dict_url = self.duck.dict_opt
             self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
             self.parse_source()
-            self.next()
+            return self.next()
+
+    def previous(self):
+        pass
 
     def generate_iframe(self):
         """
         Generate an iframe tag to embed the html we got from the Google result
         :return:
             """
-        # Better if we re fetch our request with a web browser to get an already formatted page
+        # Better if we re-fetch our request with a web browser to get an already formatted page
 
         parser = bs4.BeautifulSoup(self.data.content, "lxml")
         for anchors in parser.find_all("a", attrs={"href": re.compile("^http")}):
-            # Set all the A tags with the target = "_blank" To open links in a new tab
+            # Set all the <a> tags with the target = "_blank" To open links in a new tab
             anchors["target"] = "_blank"
         for links in parser.find_all("link", attrs={"href": re.compile("[a-zA-Z]")}):
             if hasattr(links, "href"):
                 links["href"] = "https://duckduckgo.com/" + links.get('href')
         for src in parser.find_all(attrs={"src": re.compile("[a-zA-Z]")}):
             src["src"] = "https://duckduckgo.com/" + src.get('src')
-        data_ = """<iframe  srcdoc='{}' style='border:none;width:50%;height:-webkit-fill-available;'></iframe>""" \
+        data_ = """<iframe  style='border:none;width:48%;height:-webkit-fill-available;' srcdoc='{}' ></iframe>""" \
             .format(parser)
         return data_
 
