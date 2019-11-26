@@ -33,8 +33,9 @@ pip3 install  selenium bs4 lxml urwid requests
 ```
 
 ### Running 
-In the Groove directory run <code> ./groove-cmd -h</code>  for available options 
+In the Groove directory run <code> ./groove.py -h</code>  for available options 
 
+![Searching For 'Red' using DuckDuckGo](groove-interactive.png)
 
 ### Contribution
 Feel free to report any issues encountered and also feature requests are welcome:fire:
