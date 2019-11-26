@@ -4,7 +4,8 @@ Its `Groove-tastically amazing`
 ![](git-logo.png)
 
 A command-line Search Engine
-Search the world frm the comfort of your command line
+
+Search the world from the comfort of your command line
 
 ### Features of Groove
 - We got a lit command line interface built using urwid checkout that project [here](https://github.com/urwid/urwid)
@@ -15,7 +16,7 @@ Search the world frm the comfort of your command line
  - Simple exit button
 - And more to come
 
-### installation
+### Installation
 Cloning the Repository
 ```
 git clone https://github.com/stevetyler254/Groove.git
@@ -28,9 +29,8 @@ pip3 install -r requirements.txt
 ```
 or 
 ```
-pip3 install advancedhttpserver selenium bs4 lxml urwid requests
+pip3 install  selenium bs4 lxml urwid requests
 ```
->  Note some packages above are meant for the server version, which is currently in beta mode
 
 ### Running 
 In the Groove directory run <code> ./groove-cmd -h</code>  for available options 
@@ -39,9 +39,8 @@ In the Groove directory run <code> ./groove-cmd -h</code>  for available options
 ### Contribution
 Feel free to report any issues encountered and also feature requests are welcome:fire:
 #### Todo
-- Add the server options
 - Add a previous button in the Interactive mode
-
+- Add more search engines
 ### Donation
 Donation for good work is highly appreciated
 For those wishing to donate via Paypal that can be done from [here](https://www.paypal.com/cgi_bin/webscr?cmd=_pay-inv&viewtype=altview&id=INV2-5JYK-9F6Z-3W5F-FJSC)
