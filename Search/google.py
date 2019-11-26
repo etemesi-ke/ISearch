@@ -3,12 +3,10 @@
 """
 Main Module for Google  Scraping
 WARNING: This module uses Web browsers(via selenium) hence they are
-        a tad bit slower but they do bring the best results than making a
+        a tad bit slower, but they do bring the best results than making a
         direct request with requests library
 """
 import atexit
-import re
-import time
 import urllib.parse
 
 import bs4
@@ -237,11 +235,11 @@ class Search:
             self.brw.quit()
             raise NoInternetError("No internet connection detected")
         for result in results:
-            # Find link title, Google stores it as an h3 attribute
+            # Find link title, Google stores it as a h3 attribute
             title = result.find("h3").text
             # Find link to websites
             link = (result.find("a"))["href"]
-            # Find the google text
+            # Find the Google text
             text = result.find("div", {"class": "s"}).text
             self.extra.append((title, link, text))
 
@@ -250,94 +248,6 @@ class Search:
         self.data = self.brw.page_source
         self.parse_source()
 
-    def generate_iframe(self):
-        """
-        Generate an iframe tag to embed the html we got from the Google result
-        :return:
-        """
-        formatted = self.data.replace("'", '"')
-        parser = bs4.BeautifulSoup(formatted, "lxml")
-        for anchors in parser.find_all("a", attrs={"href": re.compile("^http")}):
-            # Set all the <a> tags with the target = "_blank" To open links in a new tab
-            # except if url is the same as the google url
-            anchors["target"] = "_blank"
-
-        data = """<iframe style='border:none;width:50%;height:-webkit-fill-available;' srcdoc='{}' ></iframe>""" \
-            .format(parser)
-        return data
-
     @property
     def name(self):
         return "Google"
-
-
-# Soon to be used
-
-
-class SearchImg:
-    """
-    Search Google via an image url
-    """
-
-    def __init__(self, query, **kwargs):
-        google_url = GoogleUrl(query, **kwargs).url
-        # Set up a headless browser
-        options = brw.Options()
-        options.add_argument("--headless")
-        # Launch a browser to fetch a request
-        self.browser = brw.Browser(options=options)
-        self.browser.get(google_url)
-        # Get page source
-        self.data = self.browser.page_source
-        # Exit when the program has been quit
-        atexit.register(self.browser.quit)
-
-    def parse_source(self):
-        """
-        Parse google result
-        :return:
-        """
-        parser = bs4.BeautifulSoup(self.data, "lxml")
-        result = parser.find(id="search")
-        print(result)
-
-    # noinspection PyBroadException
-    def search_by_image(self, image_url):
-        """
-        Search Google using an image
-        :param image_url: The url of the image you want to search Google for
-        """
-        # Google's image search url
-        self.browser.get("https://www.google.com/imghp?sbi=1")
-        try:
-            # Thanks Chrome :)
-            self.browser.find_element_by_css_selector("#sbtc > div > div.dRYYxd > div.FiqGxd > span.S3Wjs").click()
-        except:
-            pass
-        self.browser.find_element_by_name("image_url").send_keys(image_url)
-        # Don't spoof this thing we are robots
-        time.sleep(2)
-        self.browser.find_element_by_css_selector("#qbbtc > input").click()
-
-        source = bs4.BeautifulSoup(self.browser.page_source, "lxml")
-        try:
-            # Search for the div tag whose id attribute is search
-            results = source.find(id='search').findAll('div', {"class": "rc"})
-            # Sometimes (depending on the User-agent) there is
-            # no id "search" in html response
-        except AttributeError:
-            results = source.find_all("div", {"class": "rc"})
-        link_text = []
-        for result in results:
-            # Find link title, Google stores it as an h3 attribute
-            title = result.find("h3").text
-            # Find link to websites
-            link = (result.find("a"))["href"]
-            # Find the google snippet
-            text = result.find("span", {"class": "st"})
-            if text is None:
-                continue
-            else:
-                link_text.append((title, link, text))
-
-        return link_text
