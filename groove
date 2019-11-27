@@ -1,0 +1,190 @@
+#!/usr/bin/python3
+import argparse
+import os
+
+import urwid
+
+import Search.bing as bing
+import Search.duck as duck
+import Search.google as google
+
+engines = {
+    'google': google,
+    "duck": duck,
+    'bing': bing,
+}
+
+
+class Cmd:
+    def __init__(self, query, engine, **kwargs):
+        """
+        Groove cmd class
+        """
+        self.kwargs = kwargs
+        self.engine = engines.get(engine)
+        self.query = query
+
+    def cmd_search(self):
+        self.results = self.engine.Search(self.query, **self.kwargs)
+
+    def pprint_cmd(self, colours=True):
+        if colours:
+            red = '\033[91m'
+            bold = '\033[1m'
+            underl = '\033[4m'
+            blue = '\033[94m'
+            endc = '\033[0m'
+        else:
+            red = ''
+            bold = ''
+            underl = ''
+            blue = ''
+            endc = ''
+        if not hasattr(self, 'results'):
+            self.cmd_search()
+        print("_" * os.get_terminal_size().columns)
+        for title, link, text in self.results.next():
+            print(red + bold + underl + title + endc)
+            print(blue + link + endc)
+            print(text + '\n')
+        print("_" * os.get_terminal_size().columns)
+
+
+class InteractiveCmd:
+    def __init__(self):
+        self.palette = (
+            ('titlebar', 'dark red,bold,underline', 'black'),
+            ('quit', 'light red,bold,underline', 'black'),
+
+            ('alert', 'dark red,bold,blink', ''),
+            ('info', 'dark red,bold,blink', ''),
+
+            ('query', 'bold', 'black'),
+
+            ('google', 'light red', ''),
+            ('duck', 'light green', ''),
+            ('bing', 'light blue', ''),
+
+            ('title', 'light red, bold,underline', ''),
+            ('link', 'light blue,underline', '')
+        )
+        # Header
+        self.header = urwid.Text(('titlebar', u'GROOVE'), align='center')
+        # Body
+        self.result_bar = urwid.Text("Input Query and click enter.\nResults will be displayed here")
+        padding = urwid.Padding(self.result_bar, left=2, right=2)
+        self.line_box = urwid.LineBox(padding, title='result bar')
+
+        # options
+        opt_grp = []
+        self.google_opt = urwid.RadioButton(opt_grp, 'Google', on_state_change=self.det_search_module)
+        google_opt = urwid.AttrMap(self.google_opt, 'google')
+        self.bing_opt = urwid.RadioButton(opt_grp, 'Bing', on_state_change=self.det_search_module)
+        bing_opt = urwid.AttrMap(self.bing_opt, 'bing')
+        self.duck_opt = urwid.RadioButton(opt_grp, 'DuckDuckGo', on_state_change=self.det_search_module)
+        duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
+        opt = urwid.GridFlow([google_opt, bing_opt, duck_opt], 20, 4, 1, align='center')
+
+        # Next button
+        next_btn = urwid.GridFlow([urwid.Button('Next', on_press=self.next)], 8, 0, 0, align='center')
+
+        body = urwid.Columns([('weight', 9, self.line_box),
+                              urwid.Pile([opt, urwid.Text(''), next_btn])])
+
+        # Footer
+        self.query = urwid.Edit('Query>>>')
+        # Exit button with Grid for compactness.
+        exit_btn = urwid.GridFlow([urwid.AttrMap(urwid.Button("Exit", on_press=self.exit), 'quit')],
+                                  cell_width=8,
+                                  h_sep=0,
+                                  v_sep=0,
+                                  align='center')
+        footer_pile = urwid.Pile([urwid.AttrMap(self.query, 'query'), urwid.Text(''), exit_btn])
+
+        # Assemble widgets
+        # Set the focus on the footer
+        self.frame = urwid.Frame(header=self.header, body=urwid.Filler(body, valign='top', top=1, bottom=1),
+                                 footer=footer_pile,
+                                 focus_part='footer')
+
+    def next(self, nothing=None):
+        tbp = []
+        if hasattr(self, 'searcher'):
+            for title, link, text in self.searcher.next():
+                tbp.append(('title', title + '\n'))
+                tbp.append(('link', link + '\n'))
+                tbp.append(('', text + '\n\n'))
+            self.result_bar.set_text(tbp)
+        else:
+            self.search()
+
+    def det_search_module(self, nothing=None, nothing1=None):
+        """
+        Determine search module to use
+        """
+        if self.google_opt.state:
+            self.search_m = google
+        elif self.bing_opt.state:
+            self.search_m = bing
+        else:
+            self.search_m = duck
+
+    def search(self):
+        """
+        Fetch results
+        """
+        query = self.query.get_edit_text()
+        if query is '' or query.strip(" ") is '':
+            self.result_bar.set_text(('alert', 'Input a value into the query box'))
+        else:
+            self.det_search_module()
+            self.result_bar.set_text(('blink', "Searching for '{}' using {}".format(query,
+                                                                                    self.search_m.__name__)))
+            tbp = []
+
+            self.line_box.set_title(self.search_m.__name__ + ' results for ' + query)
+            self.searcher = self.search_m.Search(query)
+            # Setup pretty printer
+            for title, link, text in self.searcher.next():
+                tbp.append(('title', title + '\n'))
+                tbp.append(('link', link + '\n'))
+                tbp.append(('', text + '\n\n'))
+            self.result_bar.set_text(tbp)
+
+    def exit(self, nothing=None):
+        raise urwid.ExitMainLoop()
+
+    def handle_input(self, keypress):
+        if keypress == 'enter':
+            self.search()
+        if keypress == 'esc':
+            self.exit()
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='Groove',
+                                     usage="Groove -h for help options",
+                                     epilog="Submit bugs at https://www.github.com/stevetyler254/Groove.git",
+                                     formatter_class=argparse.RawTextHelpFormatter
+                                     )
+    parser.add_argument("-i", '--interactive', action='store_true',
+                        help='Enter Groove interactive mode')
+    parser.add_argument('-s', '--search',
+                        help='Search ,print and quit')
+    parser.add_argument('-e', '--engine', choices=['google', 'duck', 'bing'],
+                        help='Search engine to use')
+    options = parser.parse_args()
+    if options.search:
+        query = options.search
+        if not options.engine:
+            print("Options --engine required for cmd search")
+            quit(1)
+        else:
+            Cmd(query, options.engine).pprint_cmd()
+    elif options.interactive:
+        interactive = InteractiveCmd()
+        urwid.MainLoop(interactive.frame, interactive.palette, unhandled_input=interactive.handle_input).run()
+
+
+if __name__ == '__main__':
+    main()
