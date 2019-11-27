@@ -124,7 +124,10 @@ class Search:
             except AttributeError:
                 title = each.find("h3").text
                 link = each.find('h3').find('a')['href']
-            text = each.find('p').text
+            try:
+                text = each.find('p').text
+            except AttributeError:
+                text = each.find('ul', {'class': 'b_vList'}).text
             self.extra.append((title, link, text))
 
     def next(self):
