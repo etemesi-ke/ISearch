@@ -4,6 +4,7 @@ Groove module for bing search
 import bs4
 import requests
 
+__name__ = 'bing'
 loc_dict = {"U.A.E": "ae", "Albania": "al",
             "Armenia": "am", "Argentina": "ar",
             "Austria": "at", "Australia": "au",

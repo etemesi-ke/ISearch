@@ -2,7 +2,7 @@ import bs4
 import requests
 
 BASE = "https://duckduckgo.com/html"
-
+__name__ = "DuckDuckGo"
 
 def _replace_spaces_with_plus(query):
     return query.replace(" ", "+")

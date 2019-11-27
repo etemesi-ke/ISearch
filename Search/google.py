@@ -14,10 +14,7 @@ import bs4
 from Browser import brw
 
 GOOGLE = "https://www.google.com"
-GOOGLE_ADV = "https://www.google.com/advanced_search"
-
-URL = None
-
+__name__ = 'Google'
 
 def _build_url(absolute, rel):
     """:param absolute: Absolute part of the url"
