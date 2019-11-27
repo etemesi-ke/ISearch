@@ -209,7 +209,10 @@ class Search:
             return var
         else:
             # If there is a page in the kwargs, remove it
-            self.kwargs.pop('page')
+            try:
+                self.kwargs.pop('page')
+            except KeyError:
+                pass
             page = self.google_url.page
             page += 1
             self.google_url = GoogleUrl(self.google_url.query, page=page, **self.kwargs)
