@@ -85,11 +85,16 @@ class InteractiveCmd:
         duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
         opt = urwid.GridFlow([google_opt, bing_opt, duck_opt], 20, 4, 1, align='center')
 
+        # Previous button
+        previous_btn = urwid.GridFlow([urwid.Button('Previous', on_press=self.previous)], 12, 0, 0, align='center')
         # Next button
         next_btn = urwid.GridFlow([urwid.Button('Next', on_press=self.next)], 8, 0, 0, align='center')
 
+        btn_pile = urwid.Pile([previous_btn, next_btn])
+
         body = urwid.Columns([('weight', 9, self.line_box),
-                              urwid.Pile([opt, urwid.Text(''), next_btn])])
+                              urwid.Pile([urwid.LineBox(opt), urwid.Text(''),
+                                          urwid.LineBox(btn_pile)])])
 
         # Footer
         self.query = urwid.Edit('Query>>>')
@@ -107,14 +112,20 @@ class InteractiveCmd:
                                  footer=footer_pile,
                                  focus_part='footer')
 
+    def previous(self):
+        pass
+
     def next(self, nothing=None):
         tbp = []
         if hasattr(self, 'searcher'):
-            for title, link, text in self.searcher.next():
-                tbp.append(('title', title + '\n'))
-                tbp.append(('link', link + '\n'))
-                tbp.append(('', text + '\n\n'))
-            self.result_bar.set_text(tbp)
+            try:
+                for title, link, text in self.searcher.next():
+                    tbp.append(('title', title + '\n'))
+                    tbp.append(('link', link + '\n'))
+                    tbp.append(('', text + '\n\n'))
+                self.result_bar.set_text(tbp)
+            except self.search_m.NoInternetError:
+                self.result_bar.set_text(('alert', "No Internet connection detected"))
         else:
             self.search()
 
@@ -143,13 +154,16 @@ class InteractiveCmd:
             tbp = []
 
             self.line_box.set_title(self.search_m.__name__ + ' results for ' + query)
-            self.searcher = self.search_m.Search(query)
-            # Setup pretty printer
-            for title, link, text in self.searcher.next():
-                tbp.append(('title', title + '\n'))
-                tbp.append(('link', link + '\n'))
-                tbp.append(('', text + '\n\n'))
-            self.result_bar.set_text(tbp)
+            try:
+                self.searcher = self.search_m.Search(query)
+
+                for title, link, text in self.searcher.next():
+                    tbp.append(('title', title + '\n'))
+                    tbp.append(('link', link + '\n'))
+                    tbp.append(('', text + '\n\n'))
+                self.result_bar.set_text(tbp)
+            except self.search_m.NoInternetError:
+                self.result_bar.set_text(('alert', "No Internet connection detected"))
 
     def exit(self, nothing=None):
         raise urwid.ExitMainLoop()
