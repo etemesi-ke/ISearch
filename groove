@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 import argparse
-import os
 
 import urwid
 
@@ -25,7 +24,11 @@ class Cmd:
         self.query = query
 
     def cmd_search(self):
-        self.results = self.engine.Search(self.query, **self.kwargs)
+        try:
+            self.results = self.engine.Search(self.query, **self.kwargs)
+        except self.engine.NoInternetError:
+            print("No internet quiting")
+            quit(1)
 
     def pprint_cmd(self, colours=True):
         if colours:
@@ -42,12 +45,16 @@ class Cmd:
             endc = ''
         if not hasattr(self, 'results'):
             self.cmd_search()
-        print("_" * os.get_terminal_size().columns)
-        for title, link, text in self.results.next():
-            print(red + bold + underl + title + endc)
-            print(blue + link + endc)
-            print(text + '\n')
-        print("_" * os.get_terminal_size().columns)
+        try:
+            for title, link, text in self.results.next():
+                print(red + bold + underl + title + endc)
+                print(blue + link + endc)
+                print(text + '\n')
+        # DuckDuckGo is re-writen in order to support bangs
+        # So this exception handler is for DuckDuckGo
+        except self.engine.NoInternetError:
+            print("No internet quiting")
+            quit(1)
 
 
 class InteractiveCmd:
@@ -57,7 +64,7 @@ class InteractiveCmd:
             ('quit', 'light red,bold,underline', 'black'),
 
             ('alert', 'dark red,bold,blink', ''),
-            ('info', 'dark red,bold,blink', ''),
+            ('info', 'light blue,bold,blink', ''),
 
             ('query', 'bold', 'black'),
 
@@ -71,9 +78,10 @@ class InteractiveCmd:
         # Header
         self.header = urwid.Text(('titlebar', u'GROOVE'), align='center')
         # Body
-        self.result_bar = urwid.Text("Input Query and click enter.\nResults will be displayed here")
+        self.result_bar = urwid.Text("Input Query and press enter.\nResults will be displayed here")
+
         padding = urwid.Padding(self.result_bar, left=2, right=2)
-        self.line_box = urwid.LineBox(padding, title='result bar')
+        self.line_box = urwid.LineBox(padding, title='Result bar')
 
         # options
         opt_grp = []
@@ -93,11 +101,14 @@ class InteractiveCmd:
         btn_pile = urwid.Pile([previous_btn, next_btn])
 
         body = urwid.Columns([('weight', 9, self.line_box),
-                              urwid.Pile([urwid.LineBox(opt), urwid.Text(''),
-                                          urwid.LineBox(btn_pile)])])
+                              urwid.Pile([urwid.LineBox(opt),
+                                          urwid.Text(''),
+                                          urwid.LineBox(btn_pile)
+                                          ])
+                              ])
 
         # Footer
-        self.query = urwid.Edit('Query>>>')
+        self.query = urwid.Edit('Query>>> ')
         # Exit button with Grid for compactness.
         exit_btn = urwid.GridFlow([urwid.AttrMap(urwid.Button("Exit", on_press=self.exit), 'quit')],
                                   cell_width=8,
@@ -149,21 +160,26 @@ class InteractiveCmd:
             self.result_bar.set_text(('alert', 'Input a value into the query box'))
         else:
             self.det_search_module()
-            self.result_bar.set_text(('blink', "Searching for '{}' using {}".format(query,
-                                                                                    self.search_m.__name__)))
+            self.result_bar.set_text(('info', "Searching for '{}' using {}".format(query,
+                                                                                   self.search_m.__name__)))
             tbp = []
-
-            self.line_box.set_title(self.search_m.__name__ + ' results for ' + query)
-            try:
-                self.searcher = self.search_m.Search(query)
-
-                for title, link, text in self.searcher.next():
-                    tbp.append(('title', title + '\n'))
-                    tbp.append(('link', link + '\n'))
-                    tbp.append(('', text + '\n\n'))
-                self.result_bar.set_text(tbp)
-            except self.search_m.NoInternetError:
-                self.result_bar.set_text(('alert', "No Internet connection detected"))
+            if query.strip(" ").startswith("!") and "Duck" in self.search_m.__name__:
+                # DuckDuckGo bang request
+                self.search_m.Search(query).handle_bang()
+                self.result_bar.set_text([("info", "Now that's a !bang\n"),
+                                          ('', "Check out https://api.duckduckgo.com/bang for more info")])
+            else:
+                # Normal request
+                self.line_box.set_title(self.search_m.__name__ + " results for '{query}'".format(query=query))
+                try:
+                    self.searcher = self.search_m.Search(query)
+                    for title, link, text in self.searcher.next():
+                        tbp.append(('title', title + '\n'))
+                        tbp.append(('link', link + '\n'))
+                        tbp.append(('', text + '\n\n'))
+                    self.result_bar.set_text(tbp)
+                except self.search_m.NoInternetError:
+                    self.result_bar.set_text(('alert', "No Internet connection detected"))
 
     def exit(self, nothing=None):
         raise urwid.ExitMainLoop()
@@ -181,23 +197,30 @@ def main():
                                      epilog="Submit bugs at https://www.github.com/stevetyler254/Groove.git",
                                      formatter_class=argparse.RawTextHelpFormatter
                                      )
+    parser.add_argument("--disable-colours", action='store_true',
+                        help="Disable colour output\n\n")
     parser.add_argument("-i", '--interactive', action='store_true',
-                        help='Enter Groove interactive mode')
-    parser.add_argument('-s', '--search',
-                        help='Search ,print and quit')
-    parser.add_argument('-e', '--engine', choices=['google', 'duck', 'bing'],
-                        help='Search engine to use')
+                        help='Enter Groove interactive mode\n\n')
+
+    parser.add_argument("-b", "--bing",
+                        help="Search using Bing", metavar="")
+    parser.add_argument("-d", "--duck",
+                        help="Search using DuckDuckGo", metavar="")
+    parser.add_argument("-g", '--google',
+                        help='Search using Google\n\n', metavar="")
+    parser.add_argument("-v", "--version", action="version", version="0.1.0")
     options = parser.parse_args()
-    if options.search:
-        query = options.search
-        if not options.engine:
-            print("Options --engine required for cmd search")
-            quit(1)
-        else:
-            Cmd(query, options.engine).pprint_cmd()
+    if options.bing:
+        Cmd(options.bing, 'bing').pprint_cmd(colours=options.disable_colours)
+    elif options.duck:
+        Cmd(options.duck, 'duck').pprint_cmd(colours=options.disable_colours)
+    elif options.google:
+        Cmd(options.google, 'google').pprint_cmd(colours=options.disable_colours)
     elif options.interactive:
         interactive = InteractiveCmd()
         urwid.MainLoop(interactive.frame, interactive.palette, unhandled_input=interactive.handle_input).run()
+    else:
+        parser.print_help()
 
 
 if __name__ == '__main__':
