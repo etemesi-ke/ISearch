@@ -1,6 +1,9 @@
 #!/usr/bin/python3
 import argparse
+import os
+import urllib.parse
 
+import requests
 import urwid
 
 import Search.bing as bing
@@ -12,6 +15,13 @@ engines = {
     "duck": duck,
     'bing': bing,
 }
+
+
+class DownloadException(Exception):
+    """
+    Base class foe download file exceptions
+    """
+    pass
 
 
 class Cmd:
@@ -63,7 +73,7 @@ class InteractiveCmd:
             ('titlebar', 'dark red,bold,underline', 'black'),
             ('quit', 'light red,bold,underline', 'black'),
 
-            ('alert', 'dark red,bold,blink', ''),
+            ('alert', 'dark red,bold,underline', ''),
             ('info', 'light blue,bold,blink', ''),
 
             ('query', 'bold', 'black'),
@@ -73,17 +83,21 @@ class InteractiveCmd:
             ('bing', 'light blue', ''),
 
             ('title', 'light red, bold,underline', ''),
-            ('link', 'light blue,underline', '')
+            ('link', 'light blue,underline', ''),
+
+            ('download_title', 'light green, bold,underline', ''),
+            ('download_edt', 'bold', ''),
+            ('color', 'light green,bold', '')
         )
         # Header
         self.header = urwid.Text(('titlebar', u'GROOVE'), align='center')
+
         # Body
         self.result_bar = urwid.Text("Input Query and press enter.\nResults will be displayed here")
-
         padding = urwid.Padding(self.result_bar, left=2, right=2)
         self.line_box = urwid.LineBox(padding, title='Result bar')
 
-        # options
+        # Options for search engines.
         opt_grp = []
         self.google_opt = urwid.RadioButton(opt_grp, 'Google', on_state_change=self.det_search_module)
         google_opt = urwid.AttrMap(self.google_opt, 'google')
@@ -93,35 +107,95 @@ class InteractiveCmd:
         duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
         opt = urwid.GridFlow([google_opt, bing_opt, duck_opt], 20, 4, 1, align='center')
 
-        # Previous button
-        previous_btn = urwid.GridFlow([urwid.Button('Previous', on_press=self.previous)], 12, 0, 0, align='center')
+        # TODO:Add a previous button.
         # Next button
         next_btn = urwid.GridFlow([urwid.Button('Next', on_press=self.next)], 8, 0, 0, align='center')
 
-        btn_pile = urwid.Pile([previous_btn, next_btn])
+        # Download options
+        download_title = urwid.Text(('download_title', "Download a File"), align='center')
+        self.download_url = urwid.Edit("Download URL >> ")
+        # Save the file in Downloads directory. unless explicitly told otherwise!
+        self.download_path = urwid.Edit('Filename >> ', edit_text="/home/" + os.getlogin() + "/Downloads")
+        download_btn = urwid.Button("Download", on_press=self.download_file)
 
-        body = urwid.Columns([('weight', 9, self.line_box),
+        download_opt = urwid.LineBox(
+            urwid.Pile([download_title,
+                        urwid.AttrMap(self.download_url, 'download_edt'),
+                        urwid.AttrMap(self.download_path, 'download_edt'),
+                        urwid.GridFlow([download_btn], 13, 0, 0, align='center')])
+        )
+        btn_pile = urwid.Pile([next_btn])
+
+        body = urwid.Columns([('weight', 5, self.line_box),
                               urwid.Pile([urwid.LineBox(opt),
                                           urwid.Text(''),
-                                          urwid.LineBox(btn_pile)
+                                          urwid.LineBox(btn_pile),
+                                          urwid.Text(''),
+                                          download_opt
                                           ])
                               ])
 
         # Footer
         self.query = urwid.Edit('Query>>> ')
+        column_bar = urwid.Columns([('weight', 5, urwid.LineBox(urwid.AttrMap(self.query, 'query'))),
+                                    urwid.Text('')],
+                                   dividechars=6)
         # Exit button with Grid for compactness.
         exit_btn = urwid.GridFlow([urwid.AttrMap(urwid.Button("Exit", on_press=self.exit), 'quit')],
                                   cell_width=8,
                                   h_sep=0,
                                   v_sep=0,
                                   align='center')
-        footer_pile = urwid.Pile([urwid.AttrMap(self.query, 'query'), urwid.Text(''), exit_btn])
+        footer_pile = urwid.Pile([column_bar, urwid.Text(''), exit_btn])
 
         # Assemble widgets
         # Set the focus on the footer
         self.frame = urwid.Frame(header=self.header, body=urwid.Filler(body, valign='top', top=1, bottom=1),
                                  footer=footer_pile,
                                  focus_part='footer')
+
+    def download_file(self, nothing=None):
+        if not self.download_url.get_edit_text().strip(""):
+            self.result_bar.set_text(('alert', "ERROR:No url provided"))
+        else:
+            url = self.download_url.get_edit_text()
+            if not url.startswith("http://"):
+                url = "http://" + url
+            try:
+                data = requests.get(url)
+                # Raise an error if the status code lies above 400
+                data.raise_for_status()
+            except Exception as e:
+                self.result_bar.set_text(('alert', e.__str__()))
+            else:
+
+                _path = self.download_path.get_edit_text()
+                try:
+                    # Create a file and then close, like the touch program
+                    open(_path, mode='x').close()
+                except IsADirectoryError:
+                    os.makedirs(_path, exist_ok=True)
+                except PermissionError:
+                    self.result_bar.set_text(("alert", "Permission denied"))
+                except FileExistsError:
+                    pass
+
+                if os.path.isfile(_path):
+                    path = _path
+                elif os.path.isdir(_path):
+                    # Get the filename from the url or if no filename set it to index.html
+                    # BUG: Sometimes it may save the file using the ip address
+                    filename = urllib.parse.urlsplit(self.download_url.get_edit_text()).path.rsplit("/")[-1:][0] \
+                               or "index.html"
+                    path = _path + "/" + filename
+                else:
+                    raise DownloadException("Path is malformed")
+                self.result_bar.set_text(("color", 'Downloading from {}'.format(url)))
+                with open(path, "wb") as wfile:
+                    # Chunk everything in 1 mb files
+                    for chunk in data.iter_content(1048576):
+                        wfile.write(chunk)
+                self.result_bar.set_text(("color", 'File saved at {}'.format(path)))
 
     def previous(self):
         pass
@@ -136,7 +210,7 @@ class InteractiveCmd:
                     tbp.append(('', text + '\n\n'))
                 self.result_bar.set_text(tbp)
             except self.search_m.NoInternetError:
-                self.result_bar.set_text(('alert', "No Internet connection detected"))
+                self.result_bar.set_text(('alert', "ERROR:No Internet connection detected"))
         else:
             self.search()
 
@@ -151,13 +225,13 @@ class InteractiveCmd:
         else:
             self.search_m = duck
 
-    def search(self):
+    def search(self, nothing=None):
         """
-        Fetch results
+        Fetch and print results
         """
         query = self.query.get_edit_text()
         if query is '' or query.strip(" ") is '':
-            self.result_bar.set_text(('alert', 'Input a value into the query box'))
+            self.result_bar.set_text(('alert', 'ERROR:Input a value into the query box'))
         else:
             self.det_search_module()
             self.result_bar.set_text(('info', "Searching for '{}' using {}".format(query,
@@ -179,12 +253,20 @@ class InteractiveCmd:
                         tbp.append(('', text + '\n\n'))
                     self.result_bar.set_text(tbp)
                 except self.search_m.NoInternetError:
-                    self.result_bar.set_text(('alert', "No Internet connection detected"))
+                    self.result_bar.set_text(('alert', "ERROR:No Internet connection detected"))
 
     def exit(self, nothing=None):
+        """
+        Exit mainloop
+        """
         raise urwid.ExitMainLoop()
 
     def handle_input(self, keypress):
+        """
+        Handle  untied input
+        :param keypress: Key pressed
+        :return:
+        """
         if keypress == 'enter':
             self.search()
         if keypress == 'esc':
