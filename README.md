@@ -1,21 +1,22 @@
 # Groove
 Its `Groove-tastically amazing`
 
-![](git-logo.png)
+![Groove Logo](git-logo.png)
 
 A command-line Search Engine
 
 Search the world from the comfort of your command line
 
-### Features of Groove
+### Features of Groove And more to come
+
 - We got a lit command line interface built using urwid checkout that project [here](https://github.com/urwid/urwid)
 - Ability to fetch next results of a search query(ability to fetch previous search results is in the implementation stage)
 - Colors (Because we all love colors)
-- Ability to choose which search engine to use( Right now limited to Google and DuckDuckGo) 
- - Fast Search using command line options
- - Simple exit button
-- And more to come
-
+- Ability to choose which search engine to use( Right now limited to Bing, Google and DuckDuckGo) 
+- Support for DuckDuckGo [!bangs](https://api.duckduckgo.com/bang)
+- Download box for those times you need to download things quickly.
+ - Error Handling when there is no internet connection.
+ 
 ### Installation
 Cloning the Repository
 ```
@@ -35,7 +36,6 @@ pip3 install  selenium bs4 lxml urwid requests
 ### Running 
 In the Groove directory run <code> ./groove.py -h</code>  for available options 
 
-![Searching For 'Red' using DuckDuckGo](groove-interactive.png)
 
 ### Contribution
 Feel free to report any issues encountered and also feature requests are welcome:fire:
