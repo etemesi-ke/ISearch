@@ -1,11 +1,21 @@
+import webbrowser
+
 import bs4
 import requests
 
 BASE = "https://duckduckgo.com/html"
 __name__ = "DuckDuckGo"
 
+
 def _replace_spaces_with_plus(query):
     return query.replace(" ", "+")
+
+
+class NoInternetError(ConnectionError):
+    """
+    Base class for Internet Errors
+    """
+    pass
 
 
 class ExhaustedResultsError(Exception):
@@ -63,15 +73,33 @@ class Search:
         self.headers = {'User-Agent':
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36'}
-        self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+
         # List for extra results
         self.first_run = True
         self._extra = []
+        self.prev = []
+
+    def get(self):
+        """Fetch a request"""
+        try:
+            self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+        except requests.ConnectionError:
+            raise NoInternetError("No internet connection detected.")
+
+    def handle_bang(self):
+        """
+        Handle a DuckDuckGo bang request
+        :return:
+        """
+        base = 'https://duckduckgo.com/?q={}'.format(self.query.replace(" ", "+"))
+        webbrowser.open(base)
 
     def quit(self):
         pass
 
     def parse_source(self):
+        if not hasattr(self, 'data'):
+            self.get()
         source = bs4.BeautifulSoup(self.data.content, "lxml")
         # Loop through the results
         if source.find('div', attrs={'class': 'no-results'}):
@@ -96,6 +124,7 @@ class Search:
         # So the first thing we can do is to return the data stored in the extra if there is
         # If there isn't send a new request and repeat storing and slicing n returning
         if self.first_run:
+            self.get()
             self.parse_source()
             self.first_run = False
         if self._extra:
@@ -104,6 +133,7 @@ class Search:
                 try:
                     # Append the zero'th item and pop it
                     var.append(self._extra[0])
+                    self.prev.append(self._extra[0])
                     self._extra.pop(0)
                 except IndexError:
                     break
@@ -117,8 +147,13 @@ class Search:
             # Request next page
             self.duck = DuckUrl(self.duck.query, page)
             self.dict_url = self.duck.dict_opt
-            self.data = requests.get(BASE, headers=self.headers, params=self.dict_url)
+            try:
+                self.data = requests.get(BASE, headers=self.headers, params=self.dict_url)
+            except requests.ConnectionError:
+                raise NoInternetError("No internet connection detected")
             self.parse_source()
+            # flush prev list
+            self.prev = []
             return self.next()
         else:
             # We are in page 1
@@ -126,10 +161,24 @@ class Search:
             # Request next page
             self.duck = DuckUrl(self.duck.query, page)
             self.dict_url = self.duck.dict_opt
-            self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+            try:
+                self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+            except requests.ConnectionError:
+                raise NoInternetError("No Internet connection detected")
             self.parse_source()
+            # Flush prev list
+            self.prev = []
             return self.next()
 
-    @property
-    def name(self):
-        return "Duck Duck Go"
+    def previous(self):
+        prev_10 = len(self.prev) - 10
+        if 1 > prev_10 > 10:
+            return prev_10
+        elif prev_10 < 20:
+            return prev_10[-20:]
+        elif prev_10 < 10:
+            return prev_10[-10:]
+        else:
+            # Nothing in the self.prev buffer.
+            # We fetch results for the previous page
+            pass
