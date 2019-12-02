@@ -4,7 +4,7 @@ Groove module for bing search
 import bs4
 import requests
 
-__name__ = 'bing'
+__name__ = 'Bing'
 loc_dict = {"U.A.E": "ae", "Albania": "al",
             "Armenia": "am", "Argentina": "ar",
             "Austria": "at", "Australia": "au",
@@ -65,6 +65,14 @@ def _replace_spaces_with_plus(string):
     return string.replace(' ', '+')
 
 
+class NoInternetError(ConnectionError):
+    pass
+
+
+class NoPageError(Exception):
+    pass
+
+
 class BingUrl:
 
     def __init__(self, query, **kwargs):
@@ -96,7 +104,8 @@ class BingUrl:
         try:
             page = int(self.kwargs.get('start')) // 10
             return page + 1
-        except:
+        except TypeError:
+            # An Unsupported operand for type NoneType and int
             return 1
 
 
@@ -111,8 +120,10 @@ class Search:
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36',
                         'Accept-Encoding': 'UTF-8'}
-
-        self.data = requests.get(self.url, params={'go': 'Submit', 'qs': 'ds'}, headers=self.headers)
+        try:
+            self.data = requests.get(self.url, params={'go': 'Submit', 'qs': 'ds'}, headers=self.headers)
+        except requests.ConnectionError:
+            raise NoInternetError('No internet connection detected')
         self.first_run = True
         self.extra = []
 
@@ -148,6 +159,31 @@ class Search:
             start = {'start': self.bing_url.page * 10 + 1}
             self.bing_url = BingUrl(self.query, **start)
             self.url = self.bing_url.url
-            self.data = requests.get(self.url, params={'first': self.bing_url.page * 10 - 11}, headers=self.headers)
+            try:
+                self.data = requests.get(self.url, params={'first': self.bing_url.page * 10 - 11}, headers=self.headers)
+            except requests.ConnectionError:
+                raise NoInternetError("No Internet connection Detected")
+            self.parse_source()
+            return self.next()
+
+    def previous(self):
+        """
+        Return results of the previous page
+        :return:
+        """
+        prev_page = self.bing_url.page - 1
+        if not prev_page:
+            raise NoPageError("Page {} doesn't exist".format(prev_page))
+        else:
+            if prev_page is 1:
+                start = {}
+            else:
+                start = {'start': prev_page * 10 + 1}
+            self.bing_url = BingUrl(self.query, **start)
+            self.url = self.bing_url.url
+            try:
+                self.data = requests.get(self.url, params={'first': self.bing_url.page * 10 - 11}, headers=self.headers)
+            except requests.ConnectionError:
+                raise NoInternetError("No Internet connection Detected")
             self.parse_source()
             return self.next()

@@ -10,11 +10,21 @@ import atexit
 import urllib.parse
 
 import bs4
+from selenium.common.exceptions import WebDriverException
 
 from Browser import brw
 
 GOOGLE = "https://www.google.com"
 __name__ = 'Google'
+
+
+class NoInternetError(ConnectionError):
+    pass
+
+
+class NoResultsError(Exception):
+    pass
+
 
 def _build_url(absolute, rel):
     """:param absolute: Absolute part of the url"
@@ -123,7 +133,7 @@ class GoogleUrl:
         self.kwargs = ''
         if kwargs:
             for i, j in kwargs.items():
-                self.kwargs += '&={key}={value}'.format(key=i, value=j)
+                self.kwargs += '&{key}={value}'.format(key=i, value=j)
         self.construct_url()
 
     def construct_url(self):
@@ -147,9 +157,6 @@ class GoogleUrl:
         return self.url_
 
 
-class NoInternetError(Exception):
-    pass
-
 
 class Search:
     """
@@ -171,13 +178,19 @@ class Search:
         self.brw = brw.Browser(options=opt)
         self.google_url = GoogleUrl(self.query, **self.kwargs)
         # Fetch the result
-        self.brw.get(self.google_url.url)
+        try:
+            self.brw.get(self.google_url.url)
+        except WebDriverException:
+            # Firefox error
+            self.brw.quit()
+            raise NoInternetError
         # Get the page source
         self.data = self.brw.page_source
         # Exit when we quit the module
         atexit.register(self.brw.quit)
         self.first_run = True
         self.extra = []
+        self.prev = []
 
     @property
     def current_url(self):
@@ -191,12 +204,15 @@ class Search:
         self.brw.quit()
 
     def next(self):
+        """
+        Fetch the next page and parse it
+        """
         if self.first_run:
             self.parse_source()
             self.first_run = False
         if self.extra:
             var = []
-            for i in range(10):
+            for i in range(11):
                 try:
                     var.append(self.extra[0])
                     self.extra.pop(0)
@@ -205,6 +221,7 @@ class Search:
                     break
             return var
         else:
+            # There is nothing in the extra, so we fetch the next page
             # If there is a page in the kwargs, remove it
             try:
                 self.kwargs.pop('page')
@@ -220,6 +237,35 @@ class Search:
             self.parse_source()
             return self.next()
 
+    def previous(self):
+        """
+        Fetch the previous result
+        """
+        page = self.google_url.page
+        page = page - 1
+
+        if not page:
+            # We are in page 1, and the user requested for page 0
+            # , which doesn't exist.
+            raise NoResultsError("Page {} doesn't exist".format(
+                page
+            ))
+        else:
+            self.google_url = GoogleUrl(self.google_url.query, page=page, **self.kwargs)
+            # Fetch the result
+            self.brw.get(self.google_url.url)
+            # Get the page source
+            self.data = self.brw.page_source
+            self.parse_source()
+            var = []
+            for i in range(10):
+                try:
+                    var.append(self.extra[0])
+                    self.extra.pop(0)
+                except IndexError:
+                    break
+            return var
+
     def parse_source(self):
         """
         Parse a Google result
@@ -232,6 +278,8 @@ class Search:
         try:
             results = parser.find('div', id='search').findAll('div', {"class": "rc"})
         except AttributeError:
+            # Chrome doesn't really go to an error age when there is no internet
+            # So this is the best way yo know it
             self.brw.quit()
             raise NoInternetError("No internet connection detected")
         for result in results:
@@ -240,14 +288,6 @@ class Search:
             # Find link to websites
             link = (result.find("a"))["href"]
             # Find the Google text
-            text = result.find("div", {"class": "s"}).text
+            text = result.find("span", {"class": "st"}).text
             self.extra.append((title, link, text))
 
-    def refresh(self):
-        self.brw.refresh()
-        self.data = self.brw.page_source
-        self.parse_source()
-
-    @property
-    def name(self):
-        return "Google"
