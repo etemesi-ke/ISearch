@@ -73,37 +73,38 @@ class InteractiveCmd:
             ('titlebar', 'dark red,bold,underline', 'black'),
             ('quit', 'light red,bold,underline', 'black'),
 
-            ('alert', 'dark red,bold,underline', ''),
+            ('alert', 'dark red,bold', ''),
             ('info', 'light blue,bold,blink', ''),
 
             ('query', 'bold', 'black'),
 
-            ('google', 'light red', ''),
-            ('duck', 'light green', ''),
-            ('bing', 'light blue', ''),
+            ('google', 'light red,bold', ''),
+            ('duck', 'light green,bold', ''),
+            ('bing', 'light blue,bold', ''),
 
             ('title', 'light red, bold,underline', ''),
             ('link', 'light blue,underline', ''),
 
             ('download_title', 'light green, bold,underline', ''),
             ('download_edt', 'bold', ''),
+            ('download_btn', 'dark magenta,bold', ''),
             ('color', 'light green,bold', '')
         )
         # Header
         self.header = urwid.Text(('titlebar', u'GROOVE'), align='center')
 
         # Body
-        self.result_bar = urwid.Text("Input Query and press enter.\nResults will be displayed here")
+        self.result_bar = urwid.Text(u"Input a query and press enter.\nResults will be displayed \u2193")
         padding = urwid.Padding(self.result_bar, left=2, right=2)
         self.line_box = urwid.LineBox(padding, title='Result bar')
 
         # Options for search engines.
         opt_grp = []
-        self.google_opt = urwid.RadioButton(opt_grp, 'Google', on_state_change=self.det_search_module)
+        self.google_opt = urwid.RadioButton(opt_grp, 'Google', on_state_change=self.det_search_module, user_data=None)
         google_opt = urwid.AttrMap(self.google_opt, 'google')
-        self.bing_opt = urwid.RadioButton(opt_grp, 'Bing', on_state_change=self.det_search_module)
+        self.bing_opt = urwid.RadioButton(opt_grp, 'Bing', on_state_change=self.det_search_module, user_data=None)
         bing_opt = urwid.AttrMap(self.bing_opt, 'bing')
-        self.duck_opt = urwid.RadioButton(opt_grp, 'DuckDuckGo', on_state_change=self.det_search_module)
+        self.duck_opt = urwid.RadioButton(opt_grp, 'DuckDuckGo', on_state_change=self.det_search_module, user_data=None)
         duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
         opt = urwid.GridFlow([google_opt, bing_opt, duck_opt], 20, 4, 1, align='center')
 
@@ -113,16 +114,18 @@ class InteractiveCmd:
 
         # Download options
         download_title = urwid.Text(('download_title', "Download a File"), align='center')
-        self.download_url = urwid.Edit("Download URL >> ")
+        self.download_url = urwid.Edit("URL >> ")
         # Save the file in Downloads directory. unless explicitly told otherwise!
-        self.download_path = urwid.Edit('Filename >> ', edit_text="/home/" + os.getlogin() + "/Downloads")
+        self.download_path = urwid.Edit('Path >> ', edit_text="/home/" + os.getlogin() + "/Downloads")
         download_btn = urwid.Button("Download", on_press=self.download_file)
 
         download_opt = urwid.LineBox(
             urwid.Pile([download_title,
                         urwid.AttrMap(self.download_url, 'download_edt'),
                         urwid.AttrMap(self.download_path, 'download_edt'),
-                        urwid.GridFlow([download_btn], 13, 0, 0, align='center')])
+                        urwid.AttrMap(urwid.GridFlow([download_btn], 13, 0, 0, align='center'), 'download_btn')
+
+                        ])
         )
         btn_pile = urwid.Pile([next_btn])
 
@@ -168,7 +171,6 @@ class InteractiveCmd:
             except Exception as e:
                 self.result_bar.set_text(('alert', e.__str__()))
             else:
-
                 _path = self.download_path.get_edit_text()
                 try:
                     # Create a file and then close, like the touch program
@@ -177,9 +179,8 @@ class InteractiveCmd:
                     os.makedirs(_path, exist_ok=True)
                 except PermissionError:
                     self.result_bar.set_text(("alert", "Permission denied"))
-                except FileExistsError:
+                except (FileExistsError, FileNotFoundError):
                     pass
-
                 if os.path.isfile(_path):
                     path = _path
                 elif os.path.isdir(_path):
@@ -191,17 +192,27 @@ class InteractiveCmd:
                 else:
                     raise DownloadException("Path is malformed")
                 self.result_bar.set_text(("color", 'Downloading from {}'.format(url)))
-                with open(path, "wb") as wfile:
-                    # Chunk everything in 1 mb files
-                    for chunk in data.iter_content(1048576):
-                        wfile.write(chunk)
-                self.result_bar.set_text(("color", 'File saved at {}'.format(path)))
+                try:
+                    with open(path, "wb") as wfile:
+                        # Chunk everything in 1 mb files
+                        for chunk in data.iter_content(1048576):
+                            wfile.write(chunk)
+                except Exception as e:
+                    self.result_bar.set_text(('alert', e.__str__()))
+                else:
+                    self.result_bar.set_text(("color", 'File saved at {}'.format(path)))
 
     def previous(self):
         pass
 
     def next(self, nothing=None):
+        """
+        Fetch next results
+        :param nothing:
+        :return:
+        """
         tbp = []
+        self.det_search_module()
         if hasattr(self, 'searcher'):
             try:
                 for title, link, text in self.searcher.next():
@@ -209,7 +220,7 @@ class InteractiveCmd:
                     tbp.append(('link', link + '\n'))
                     tbp.append(('', text + '\n\n'))
                 self.result_bar.set_text(tbp)
-            except self.search_m.NoInternetError:
+            except ConnectionError:
                 self.result_bar.set_text(('alert', "ERROR:No Internet connection detected"))
         else:
             self.search()
@@ -252,7 +263,7 @@ class InteractiveCmd:
                         tbp.append(('link', link + '\n'))
                         tbp.append(('', text + '\n\n'))
                     self.result_bar.set_text(tbp)
-                except self.search_m.NoInternetError:
+                except ConnectionError:
                     self.result_bar.set_text(('alert', "ERROR:No Internet connection detected"))
 
     def exit(self, nothing=None):
@@ -275,7 +286,7 @@ class InteractiveCmd:
 
 def main():
     parser = argparse.ArgumentParser(prog='Groove',
-                                     usage="Groove -h for help options",
+                                     description="Groove command line options",
                                      epilog="Submit bugs at https://www.github.com/stevetyler254/Groove.git",
                                      formatter_class=argparse.RawTextHelpFormatter
                                      )
