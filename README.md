@@ -36,6 +36,8 @@ pip3 install  selenium bs4 lxml urwid requests
 ### Running 
 In the Groove directory run <code> ./groove.py -h</code>  for available options 
 
+### Problems
+Gnome terminal version 3.34.2 was rendering very weird interfaces
 
 ### Contribution
 Feel free to report any issues encountered and also feature requests are welcome:fire:
