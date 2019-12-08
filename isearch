@@ -1,0 +1,496 @@
+#!/usr/bin/python3
+"""
+Write good code and walk away
+"""
+
+import argparse
+import json
+import os
+import sys
+import threading
+import urllib.parse
+import warnings
+import webbrowser
+
+import requests
+import urwid
+
+try:
+    from lxml import etree
+except ImportError:
+    import xml.etree.ElementTree as etree
+
+import Search.bing as bing
+import Search.duck as duck
+import Search.google as google
+
+engines = {
+    'google': google,
+    "duck": duck,
+    'bing': bing,
+}
+GIT = 'https://www.github.com/steve-tyler/Groove.git'
+
+ENCODING = sys.getfilesystemencoding()
+# Warn if encoding is something we've never seen
+if ENCODING != 'utf-8':
+    warnings.warn('The program has not been tested with any encoding'
+                  'other than utf-8. Your system encoding is %s Proceed at your own caution')
+
+__version__ = '0.2.0'
+
+
+def update_isearch():
+    api = 'https://api.github.com/repos/steve-tyler/groove'
+
+
+class DownloadException(Exception):
+    """
+    Base class foe download file exceptions
+    """
+
+    pass
+
+
+class Cmd:
+    def __init__(self, query: str, engine, pprint_json=False, pprint_xml=False,
+                 colours=True, **kwargs):
+        """
+        ISearch cmd class
+        """
+        self.kwargs = kwargs
+        self.engine = engines.get(engine)
+        self.query = query
+        self.colours = colours
+        if pprint_json:
+            self.printer = self.pprint_json
+        elif pprint_xml:
+            self.printer = self.pprint_xml
+        else:
+            self.printer = self.pprint_cmd
+
+    def cmd_search(self):
+        try:
+            if self.query.strip('\\').startswith("!") and 'DuckDuckGo' in self.engine.__name__:
+                # A bang search
+                self.engine.Search(self.query[1:], **self.kwargs).handle_bang()
+                quit(0)
+            else:
+                self.results = self.engine.Search(self.query, **self.kwargs)
+        except self.engine.NoInternetError:
+            print("No internet quiting")
+            quit(1)
+
+    def fetch_next(self):
+        """
+        Fetch next results
+        :return: a list  :type whose elements are a dict :type containing
+        a title, link, and  text
+        """
+        if not hasattr(self, 'results'):
+            self.cmd_search()
+        try:
+            return self.results.next()
+        except ConnectionError as ce:
+            print(ce.__str__())
+            quit(1)
+
+    def pprint_cmd(self):
+        if self.colours:
+            purple = '\033[95m'
+            red = '\033[91m'
+            bold = '\033[1m'
+            underl = '\033[4m'
+            blue = '\033[94m'
+            endc = '\033[0m'
+        else:
+            purple = ''
+            red = ''
+            bold = ''
+            underl = ''
+            blue = ''
+            endc = ''
+
+        store = ''
+        for items in self.fetch_next():
+            store += red + bold + items['rank'] + '. ' + underl + items['title'] + endc + '\n'
+            store += blue + items['link'] + endc + '\n'
+            store += items['text'] + '\n\n'
+        print(store)
+        return ''
+
+    def pprint_json(self):
+        """
+        Print json output to the terminal
+        """
+        # Encode and decode to ensure support for unicode characters.
+        dump = json.dumps(self.fetch_next(), indent=4, ensure_ascii=False).encode(ENCODING)
+        print(dump.decode(ENCODING))
+
+    def pprint_xml(self):
+        xml_p = etree.Element('root', encoding='utf-8')
+        # Create a xml document
+        for items in self.fetch_next():
+            result = etree.Element('result', attrib={'rank': items['rank']})
+            etree.SubElement(result, "title").text = items['title']
+            etree.SubElement(result, "link").text = items['link']
+            etree.SubElement(result, "text").text = items['text']
+            xml_p.append(result)
+        # Specify the encoding and decoding to add support for unicode characters
+        print(etree.tostring(xml_p, pretty_print=True, xml_declaration=True, encoding='utf-8').decode('utf-8'))
+
+
+class InteractiveCmd:
+    def __init__(self):
+        self.palette = (
+            ('titlebar', 'dark red,bold,underline', 'black'),
+            ('quit', 'light red,bold,underline', 'black'),
+
+            ('alert', 'dark red,bold,blink', ''),
+            ('info', 'light blue,bold,blink', ''),
+
+            ('query', 'bold', 'black'),
+
+            ('google', 'light red,bold', ''),
+            ('duck', 'light green,bold', ''),
+            ('bing', 'light blue,bold', ''),
+
+            ('title', 'light red, bold,underline', ''),
+            ('link', 'light blue,underline', ''),
+
+            ('download_title', 'light green, bold,underline', ''),
+            ('download_edt', 'bold', ''),
+            ('download_btn', 'dark magenta,bold', ''),
+            ('color', 'light green,bold', '')
+        )
+        # Header
+        self.header = urwid.Text(('titlebar', u'ISearch'), align='center')
+
+        # Body
+        self.result_bar = urwid.Text(u"Input a query and press enter.\nResults will be displayed \u2193 "
+                                     u"\nPress F1 for shortcuts")
+        padding = urwid.Padding(self.result_bar, left=2, right=2)
+        self.line_box = urwid.LineBox(padding, title='Result bar')
+
+        # Options for search engines.
+        opt_grp = []
+        self.google_opt = urwid.RadioButton(opt_grp, 'Google', on_state_change=self.det_search_module, user_data=None)
+        google_opt = urwid.AttrMap(self.google_opt, 'google')
+        self.bing_opt = urwid.RadioButton(opt_grp, 'Bing', on_state_change=self.det_search_module, user_data=None)
+        bing_opt = urwid.AttrMap(self.bing_opt, 'bing')
+        self.duck_opt = urwid.RadioButton(opt_grp, 'DuckDuckGo', on_state_change=self.det_search_module, user_data=None)
+        duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
+        opt = urwid.GridFlow([google_opt, bing_opt, duck_opt], 20, 4, 1, align='center')
+
+        # TODO:Add a previous button.
+        # Next button
+        next_btn = urwid.GridFlow([urwid.Button('Next', on_press=self.next)], 8, 0, 0, align='center')
+
+        # Download options
+        download_title = urwid.Text(('download_title', "Download a File [F8]"), align='center')
+        self.download_url = urwid.Edit("URL >> ")
+        # Save the file in Downloads directory. unless explicitly told otherwise!
+        self.download_path = urwid.Edit('Path >>', edit_text=os.environ['HOME'] + "/Downloads")
+        download_btn = urwid.Button("Download", on_press=self.download_thread)
+
+        download_opt = urwid.LineBox(
+            urwid.Pile([download_title,
+                        urwid.AttrMap(self.download_url, 'download_edt'),
+                        urwid.AttrMap(self.download_path, 'download_edt'),
+                        urwid.AttrMap(urwid.GridFlow([download_btn], 13, 0, 0, align='center'), 'download_btn')
+
+                        ])
+        )
+        btn_pile = urwid.Pile([next_btn])
+        self.info_bar = urwid.Text('')
+        body = urwid.Columns([('weight', 5, self.line_box),
+                              urwid.Pile([urwid.LineBox(opt, title='Search Engines'),
+                                          urwid.Text(''),
+                                          urwid.LineBox(btn_pile),
+                                          urwid.Text(''),
+                                          download_opt,
+                                          urwid.Text('\n'),
+                                          urwid.LineBox(self.info_bar, title='Info bar'),
+                                          ])
+                              ])
+
+        # Footer
+        self.query = urwid.Edit('Query>>> ')
+        column_bar = urwid.Columns([('weight', 5, urwid.LineBox(urwid.AttrMap(self.query, 'query'))),
+                                    urwid.Text('')],
+                                   dividechars=6)
+        # Exit button with Grid for compactness.
+        exit_btn = urwid.GridFlow([urwid.AttrMap(urwid.Button("Exit", on_press=self.exit), 'quit')],
+                                  cell_width=8,
+                                  h_sep=0,
+                                  v_sep=0,
+                                  align='center')
+        footer_pile = urwid.Pile([column_bar, urwid.Text(''), exit_btn])
+
+        # Assemble widgets
+        # Set the focus on the footer
+        self.frame = urwid.Frame(header=self.header, body=urwid.Filler(body, valign='top', top=1, bottom=1),
+                                 footer=footer_pile,
+                                 focus_part='footer')
+
+    def download_thread(self, *args):
+        thread = threading.Thread(target=self.download_file)
+        thread.start()
+
+    def download_file(self, *args):
+        if not self.download_url.get_edit_text().strip(""):
+            self.info_bar.set_text(('alert', "ERROR:No url provided"))
+        else:
+            url = self.download_url.get_edit_text()
+            try:
+                # Stream the data we don't want adding a 500 mb file to memory.
+                data = requests.get(url, stream=True)
+                # Raise an error if the status code lies above 400
+                data.raise_for_status()
+            except Exception as e:
+                self.info_bar.set_text(('alert', e.__str__()))
+            else:
+                _path = self.download_path.get_edit_text()
+                try:
+                    # Create a file and then close, like the touch program
+                    open(_path, mode='x').close()
+                except IsADirectoryError:
+                    # IF the path ends with / it becomes a directory.
+                    os.makedirs(_path, exist_ok=True)
+                except (FileExistsError, FileNotFoundError) as e:
+                    self.info_bar.set_text(('alert', e.__str__()))
+                if os.path.isfile(_path):
+                    path = _path
+                elif os.path.isdir(_path):
+                    # Get the filename from the last part url or if no filename set it to index.html
+                    # BUG: Sometimes it may save the file using the ip address
+                    filename = urllib.parse.urlsplit(self.download_url.get_edit_text()).path.rsplit("/")[-1:][0] \
+                               or "index.html"
+                    path = _path + "/" + filename
+                else:
+                    raise DownloadException("Path is malformed")
+                self.info_bar.set_text(("color", 'Downloading from {}'.format(url)))
+                try:
+                    with open(path, "wb") as wfile:
+                        # Chunk everything in 1 mb files
+                        for chunk in data.iter_content(1048576):
+                            wfile.write(chunk)
+                except Exception as e:
+                    self.result_bar.set_text(('alert', e.__str__()))
+                else:
+                    self.info_bar.set_text(("color", 'File saved at {}'.format(path)))
+
+    def previous(self):
+        pass
+
+    def next(self, *args):
+        """
+        Fetch next results
+        :return:
+        """
+        tbp = []
+        self.det_search_module()
+        if hasattr(self, 'searcher'):
+            try:
+                for items in self.searcher.next():
+                    tbp.append(('title', items['rank'] + '. ' + items['title'] + '\n'))
+                    tbp.append(('link', items['link'] + '\n'))
+                    tbp.append(('', items['text'] + '\n\n'))
+                self.result_bar.set_text(tbp)
+            except ConnectionError:
+                self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
+        else:
+            self.search()
+
+    def det_search_module(self, *args):
+        """
+        Determine search module to use.
+        By checking, which radiobutton state has been set
+        to True.
+        """
+        if self.google_opt.state:
+            self.search_m = google
+        elif self.bing_opt.state:
+            self.search_m = bing
+        elif self.duck_opt.state:
+            self.search_m = duck
+
+    def search(self, *args):
+        """
+        Fetch and print results
+        """
+        # Clear whatever info is on the info bar
+        self.info_bar.set_text('')
+        query = self.query.get_edit_text()
+        # if query is just spaces ....
+        if query.strip() is '':
+            self.info_bar.set_text(('alert', 'ERROR:Input a value into the query box'))
+        else:
+            self.det_search_module()
+            tbp = []
+            if query.strip(" ").startswith("!") or query.strip('').startswith("/") \
+                    and "Duck" in self.search_m.__name__:
+                # DuckDuckGo bang request
+                self.search_m.Search(query).handle_bang()
+                self.result_bar.set_text([("info", "Now that's a !bang\n"),
+                                          ('', "Check out https://api.duckduckgo.com/bang for more info")])
+            else:
+                # Normal request
+                self.line_box.set_title(self.search_m.__name__ + " results for '{query}'".format(query=query))
+                try:
+                    self.searcher = self.search_m.Search(query)
+                    for items in self.searcher.next():
+                        tbp.append(('title', items['rank'] + '. ' + items['title'] + '\n'))
+                        tbp.append(('link', items['link'] + '\n'))
+                        tbp.append(('', items['text'] + '\n\n'))
+                    self.result_bar.set_text(tbp)
+                except ConnectionError:
+                    self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
+
+    def exit(self, nothing=None):
+        """
+        Exit mainloop
+        """
+        raise urwid.ExitMainLoop()
+
+    def handle_input(self, keypress):
+        """
+        Handle  untied input
+        :param keypress: Key pressed
+        :return:
+        """
+        if keypress == 'enter':
+            self.search()
+        if keypress == 'esc':
+            self.exit()
+        if keypress == 'f8':
+            # Shortcut for Download options
+            self.download_file()
+        if keypress == 'f1':
+            # Show help
+            self.show_help()
+        if keypress == 'f4':
+            # Open the project's github page
+            webbrowser.open(GIT)
+        if keypress == 'f3':
+            self.info_bar.set_text('')
+
+    def show_help(self, key=None):
+        help_msg = [
+            """
+            Press       'F1' to show this help
+            Press       'F3' to clear info bar
+            Press       '""", ("titlebar", "F4"), """' to open the project in github.com.
+            Press       'F8' to download the url present in the Download bar
+            
+            Press       'ESC' to exit.
+            Press       'enter' to perform a search. 
+            """
+        ]
+        self.result_bar.set_text(help_msg)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='ISearch',
+                                     description="ISearch command line options",
+                                     epilog="Submit bugs at {}".format(GIT),
+                                     formatter_class=argparse.RawTextHelpFormatter
+                                     )
+    parser.add_argument("-i", '--interactive', action='store_true',
+                        help='Enter ISearch interactive mode')
+    parser.add_argument('-u', '--update', action='store_true',
+                        help='Update isearch to the latest version')
+    sbp = parser.add_subparsers(dest='s_name', help="", metavar='')
+
+    # Bing sub-options
+    bing_p = sbp.add_parser("bing", description="Bing search in ISearch",
+                            help='Bing Search in ISearch\n\n',
+                            formatter_class=argparse.RawTextHelpFormatter,
+                            epilog="Submit bugs at {}".format(GIT)
+                            )
+    bing_p.add_argument('query', help='Search query')
+    bing_p.add_argument("--disable-colours", action='store_true',
+                        help="Disable colour output [only when printing to cmd]\n\n")
+    bing_p.add_argument("-c", dest='tld', metavar='country', help='Top level domain to use\n\n')
+    bing_p.add_argument('-j', '--json', action='store_true', help='Output in json format')
+    bing_p.add_argument('-x', '--xml', action='store_true', help='Output in xml format\n\n')
+    bing_p.add_argument('-l', '--lang', type=str, default='en', help='Language to return results in',
+                        metavar='')
+    bing_p.add_argument("-N", '--num', type=int, default=10, help="print 'N' amount of results",
+                        metavar='')
+    bing_p.add_argument('-p', '--page', metavar='', type=int, default=1, help="Fetch results from the n'th page")
+
+    # DuckDuckGo Options
+    duck_p = sbp.add_parser("duck", description="DuckDuckGo search in ISearch",
+                            help="DuckDuckGo Search in ISearch\n\n",
+                            formatter_class=argparse.RawTextHelpFormatter,
+                            epilog="To perform !bang requests(because they are amazing) add a '\\' before the bang\n"
+                                   "This is because bash and zsh have their own !bang implementations\n"
+                                   "(Which are also cool)\n\n"
+                                   "Submit bugs at {}".format(GIT)
+                            )
+    duck_p.add_argument("--disable-colours", action='store_true',
+                        help="Disable colour output[ only to when printing to cmd ]\n\n")
+    duck_p.add_argument('query', help='Search query')
+    duck_p.add_argument('-j', '--json', action='store_true', help='Output in json format')
+    duck_p.add_argument('-x', '--xml', action='store_true', help='Output in xml format\n\n')
+    duck_p.add_argument("-N", '--num', type=int, default=10, help="print 'N' amount of results\n\n",
+                        metavar=' ')
+    duck_p.add_argument('-p', '--page', type=int, default=1, help="Fetch results from n'th page", metavar='')
+    # Google sub-options
+    google_p = sbp.add_parser("google", description="Google search in ISearch",
+                              help='Google Search in ISearch\n\n',
+                              formatter_class=argparse.RawTextHelpFormatter,
+                              epilog="Submit bugs at https://www.github.com/steve-tyler/Groove.git")
+
+    google_p.add_argument("query", help='Search query')
+    google_p.add_argument("--disable-colours", action='store_true',
+                          help="Disable colour output[only when printing to cmd]\n\n")
+    google_p.add_argument('-c', dest='tld', metavar='country',
+                          help="Country Top level domain to use\n\n")
+    google_p.add_argument('-j', '--json', action='store_true', help='Output in json format')
+    google_p.add_argument('-x', '--xml', action='store_true', help='Output in xml format\n\n')
+    google_p.add_argument('-p', '--page', help="Fetch results from the n'th page", metavar='',
+                          type=int, default=1)
+    google_p.add_argument("-N", '--num', help="Fetch 'N' amount of results (default:10)\n\n",
+                          type=int, default=10, metavar='')
+    google_p.add_argument('-X', '--exact', action='store_true', help='Disable spelling correction')
+
+    parser.add_argument("-v", "--version", action="version", version=__version__)
+
+    options = parser.parse_args()
+
+    if options.interactive:
+        interactive = InteractiveCmd()
+        urwid.MainLoop(interactive.frame, interactive.palette, unhandled_input=interactive.handle_input).run()
+
+    elif options.s_name == 'google':
+        query = options.query
+        inst_c = Cmd(query, options.s_name, options.json, options.xml, not options.disable_colours,
+                     # Other info
+                     country=options.tld, exact=options.exact, num=options.num, page=options.page,
+                     )
+        inst_c.printer()
+
+    elif options.s_name == 'duck':
+        query = options.query
+        inst_c = Cmd(query, options.s_name, options.json, options.xml, not options.disable_colours,
+                     # Other options
+                     num=options.num, page=options.page)
+        inst_c.printer()
+
+    elif options.s_name == 'bing':
+        query = options.query
+        inst_c = Cmd(query, options.s_name, options.json, options.xml, not options.disable_colours,
+                     # Again, other options
+                     country=options.tld, lang=options.lang, num=options.num, page=options.page)
+        inst_c.printer()
+
+    elif options.update:
+        update_isearch()
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()
