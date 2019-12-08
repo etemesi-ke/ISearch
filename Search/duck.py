@@ -7,7 +7,7 @@ BASE = "https://duckduckgo.com/html"
 __name__ = "DuckDuckGo"
 
 
-def _replace_spaces_with_plus(query):
+def _replace_spaces_with_plus(query: str) -> str:
     return query.replace(" ", "+")
 
 
@@ -25,14 +25,26 @@ class ExhaustedResultsError(Exception):
     pass
 
 
+class NoResultsError(Exception):
+    """
+    Base class for errors consisting of non'existent pages
+    """
+    pass
+
+
 class DuckUrl:
-    def __init__(self, query, page=1):
+    def __init__(self, query: str, page=1):
         """
-        Duck Url
-        :param query: Main query
+        Initialize self
+        :type query:str
+        :param query:  Search keyword
+        :param page: Fetch results from *page*.
+        DuckDuckGo returns 30 results per page so for some queries don't
+        bump up the page to a high number
         """
         self.page = page
         self.qry = query
+        # A normal dictionary if we don't add page attribute
         self.dict = {"q": self.qry,
                      'kl': 'us-en'}
         self.construct_url()
@@ -46,6 +58,9 @@ class DuckUrl:
 
     @property
     def query(self):
+        """
+        return: query searched
+        """
         return self.qry
 
     def construct_url(self):
@@ -66,18 +81,33 @@ class DuckUrl:
 
 
 class Search:
-    def __init__(self, query, **kwargs):
+    """
+    Unofficial DuckDuckGo search API
+    """
+
+    def __init__(self, query: str, num=10, **kwargs):
+        """
+        :param query: Search keyword
+        param num: Amount of results to return
+        The number should not be greater than 30
+        :param kwargs: Keyword arguments passed to the DuckUrl
+        """
         self.query = query
         self.duck = DuckUrl(query, **kwargs)
         self.dict_url = self.duck.dict_opt
+        # User-Agent string
         self.headers = {'User-Agent':
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36'}
-
+        # Amount of results
+        self.num = num if num < 30 else 10
         # List for extra results
+        self.rank = 1
         self.first_run = True
-        self._extra = []
-        self.prev = []
+        # Result counter
+        self.count = 0
+        self.results = []
+        self.listy = []
 
     def get(self):
         """Fetch a request"""
@@ -89,21 +119,22 @@ class Search:
     def handle_bang(self):
         """
         Handle a DuckDuckGo bang request
-        :return:
         """
         base = 'https://duckduckgo.com/?q={}'.format(self.query.replace(" ", "+"))
         webbrowser.open(base)
 
-    def quit(self):
-        pass
-
     def parse_source(self):
+        """
+        Parse a raw web page to return title links and text from it
+        """
         if not hasattr(self, 'data'):
             self.get()
-        source = bs4.BeautifulSoup(self.data.content, "lxml")
-        # Loop through the results
+        source = bs4.BeautifulSoup(self.data.text, "lxml")
+        # Results have been exhausted, raise an error
         if source.find('div', attrs={'class': 'no-results'}):
             raise ExhaustedResultsError('No more results')
+
+        # Loop through the results
         for each in source.find("div", id="links").findAll("div", {"class": "result__body"}):
             try:
                 title = each.find("h2").find("a").text
@@ -111,34 +142,65 @@ class Search:
                 text = each.find("a", {"class": "result__snippet"}).text
             except AttributeError:
                 continue
-            self._extra.append((title, link, text))
-        return self._extra
+
+            self.results.append({'rank': str(self.rank), 'title': title, 'link': link, 'text': text})
+            # Increment rank
+            self.rank += 1
+        # List-ify results
+        self.listify()
+
+    def listify(self):
+        """
+        List-ify results
+
+        Take a self.result and create a list with the results
+        Each list contains self.num items or less
+
+        This is called implicitly by self.parse_source()
+        """
+        init = 0
+        number = self.num
+        # WARNING: THIS CODE IS MORE DANGEROUS THAN FAILING TO PAY TAXES
+        # CHANGE AT YOUR OWN RISK
+        # AM NOT RESPONSIBLE FOR FIRES, HURRICANES AND YOUR COMPUTER'S
+        #  MEMORY FILLING UP
+        while True:
+            try:
+                self.listy.append([self.results[num] for num in range(init, number)])
+                init += self.num
+                number = number + self.num
+            except IndexError:
+                try:
+                    self.listy.append([self.results[num] for num in range(init, len(self.results))])
+                except IndexError:
+                    pass
+                break
 
     def next(self):
         """
-        Function to fetch the next 10 results
+        Function to fetch the next self.num results
         """
-        # DuckDuckGo are very generous in their first page returns
-        # They give us 30 results  in  each search. 10 results should be  printed
-        # The remaining 20 are stored in the extra slot (thanks to a lot of slicing)
-        # So the first thing we can do is to return the data stored in the extra if there is
-        # If there isn't send a new request and repeat storing and slicing n returning
         if self.first_run:
             self.get()
             self.parse_source()
             self.first_run = False
-        if self._extra:
-            var = []
-            for i in range(10):
-                try:
-                    # Append the zero'th item and pop it
-                    var.append(self._extra[0])
-                    self.prev.append(self._extra[0])
-                    self._extra.pop(0)
-                except IndexError:
-                    break
+        try:
+            # Pick an item from listify according to the self.counter
+            var = self.listy[self.count]
+            self.count += 1
             return var
-        elif 'dc' and 's' in self.dict_url.keys():
+        except IndexError:
+            self.next_page()
+            # One count more sine the try function if fails doesn't increment the counter
+            self.count += 2
+            var = self.listy[self.count]
+            return var
+
+    def next_page(self):
+        """
+        Fetch the next page and parse results
+        """
+        if 'dc' and 's' in self.dict_url.keys():
             # We are not in page 1
             # get the page we are in
             page = int(self.dict_url.get('s')) // 30
@@ -152,9 +214,8 @@ class Search:
             except requests.ConnectionError:
                 raise NoInternetError("No internet connection detected")
             self.parse_source()
-            # flush prev list
-            self.prev = []
-            return self.next()
+
+            self.next()
         else:
             # We are in page 1
             page = 2
@@ -166,19 +227,15 @@ class Search:
             except requests.ConnectionError:
                 raise NoInternetError("No Internet connection detected")
             self.parse_source()
-            # Flush prev list
-            self.prev = []
-            return self.next()
+
+            self.next()
 
     def previous(self):
-        prev_10 = len(self.prev) - 10
-        if 1 > prev_10 > 10:
-            return prev_10
-        elif prev_10 < 20:
-            return prev_10[-20:]
-        elif prev_10 < 10:
-            return prev_10[-10:]
-        else:
-            # Nothing in the self.prev buffer.
-            # We fetch results for the previous page
-            pass
+        """
+        Fetch the results of the previous page:
+        """
+        self.count = self.count - 1
+        # Count gets to zero
+        if self.count < 0:
+            raise NoResultsError("No results left")
+        return self.listy[self.count]
