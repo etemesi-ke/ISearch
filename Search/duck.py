@@ -6,6 +6,35 @@ import requests
 BASE = "https://duckduckgo.com/html"
 __name__ = "DuckDuckGo"
 
+loc_dict = {
+    'Arabia': 'xa-ar', 'Arabia(en)': 'xa-en',
+    'Argentina': 'ar-es', 'Australia': 'au-en',
+    'Austria': 'au-de', 'Belgium(fr)': 'be-fr',
+    'Belgium(nl)': 'be-nl', 'Brazil': 'br-pt',
+    'Bulgaria': 'bg-bg', 'Canada': 'ca-en',
+    'Canada(fr)': 'ca-fr', 'Catalan': 'ct-ca',
+    'Chile': 'cl-es', 'China': 'cn-zh', 'Colombia': 'co-es',
+    'Croatia': 'hr-hr', 'Czech Republic': 'cz-cs',
+    'Denmark': 'dk-da', 'Estonia': 'ee-et',
+    'Finland': 'fi-fi', 'France': 'fr-fr', 'Germany': 'de-de',
+    'Hong Kong': 'hk-tzh', 'Hungary': 'hu-hu',
+    "India": 'in-en', 'Indonesia': 'id-id', 'Indonesia(en)': 'id-en',
+    'Ireland': 'ie-en', 'Israel': 'il-he', 'Italy': 'it-it', 'Japan': 'jp-jp',
+    'Lithuania': 'lt-lt', 'Latin America': 'xl-es', 'Malaysia': 'my-ms',
+    'Malaysia(en)': 'my-en', 'Mexico': 'mx-es', 'Netherlands': 'nl-nl',
+    'Norway': "no-no", 'New Zealand': 'nz-en', 'Peru': 'pe-es',
+    'Philippines': 'ph-en', 'Philippines(tl)': 'ph-tl', 'Poland': 'pl-pl',
+    'Portugal': 'pt-pt', 'Romania': 'ro-ro', 'Russia': 'ru-ru',
+    "Singapore": 'sg-en', 'Slovak Republic': 'sk-sk', "Slovenia": 'sl-sl',
+    'South Africa': 'za-en', 'Spain': 'es-es', 'Sweden': 'se-sv',
+    'Switzerland(de)': 'ch-de', 'Switzerland(fr)': 'ch-fr',
+    'Switzerland(it)': 'ch-it', 'Taiwan': 'tw-tzh', 'Thailand': 'th-th',
+    'Turkey': 'tr-tr', 'Ukraine': 'ua-uk', 'United Kingdom': 'uk-en',
+    'United States': 'us-en', 'United States(es)': 'us-es', 'Venezuela': 've-es',
+    'Vietnam': 'vn-vi'
+}
+country_kl = (items for items in loc_dict.values())
+
 
 def _replace_spaces_with_plus(query: str) -> str:
     return query.replace(" ", "+")
@@ -33,20 +62,35 @@ class NoResultsError(Exception):
 
 
 class DuckUrl:
-    def __init__(self, query: str, page=1):
+    def __init__(self, query: str, country='wt-wt', page=1, safesearch=-1):
         """
         Initialize self
         :type query:str
         :param query:  Search keyword
         :param page: Fetch results from *page*.
-        DuckDuckGo returns 30 results per page so for some queries don't
+        DuckDuckGo returns 30 results per page so  don't
         bump up the page to a high number
         """
         self.page = page
         self.qry = query
         # A normal dictionary if we don't add page attribute
+        if country is not 'wt_wt':
+            try:
+                attr = loc_dict[country]
+            except KeyError:
+                attr = country if country in country_kl else 'wt-wt'
+        else:
+            attr = country
         self.dict = {"q": self.qry,
-                     'kl': 'us-en'}
+                     # Region specific options
+                     'kl': attr,
+                     # Full urls
+                     'kaf': '1',
+                     # Safe search options
+                     'kp': safesearch,
+                     # HTTPS on
+                     'kh': '1'
+                     }
         self.construct_url()
 
     @property
@@ -85,7 +129,7 @@ class Search:
     Unofficial DuckDuckGo search API
     """
 
-    def __init__(self, query: str, num=10, **kwargs):
+    def __init__(self, query: str, num=10, api=False, **kwargs):
         """
         :param query: Search keyword
         param num: Amount of results to return
@@ -93,6 +137,9 @@ class Search:
         :param kwargs: Keyword arguments passed to the DuckUrl
         """
         self.query = query
+        if api:
+            self.handle_api()
+
         self.duck = DuckUrl(query, **kwargs)
         self.dict_url = self.duck.dict_opt
         # User-Agent string
@@ -115,6 +162,28 @@ class Search:
             self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
         except requests.ConnectionError:
             raise NoInternetError("No internet connection detected.")
+
+    def handle_api(self):
+        """
+        Handle a DuckDuckGoAPI request
+        """
+        params = {'q': self.query,
+                  'format': 'json',
+                  'pretty': '1',
+                  'no_html': '1',
+                  }
+        base = 'https://api.duckduckgo.com/'
+        # Just because requests library is awesome...
+        # We let it convert the output to JSON
+        try:
+            data_json = requests.get(base, params=params,
+                                     headers={"User-Agent": "ISearch "})
+        except requests.ConnectionError:
+            print('No internet quiting')
+            quit(1)
+
+        # noinspection PyUnboundLocalVariable
+        return data_json
 
     def handle_bang(self):
         """
