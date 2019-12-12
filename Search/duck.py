@@ -89,7 +89,9 @@ class DuckUrl:
                      # Safe search options
                      'kp': safesearch,
                      # HTTPS on
-                     'kh': '1'
+                     'kh': '1',
+                     # Get instead of post
+                     'kg': 'g'
                      }
         self.construct_url()
 
@@ -114,14 +116,24 @@ class DuckUrl:
         """
 
         if self.page > 1:
-            self.dict.__setitem__("s", str(self.page * 30))
+            page = self.page - 1
+            self.dict.__setitem__("s", str(page * 30))
             self.dict.__setitem__("nextParams", '')
             self.dict.__setitem__('v', 'l')
             self.dict.__setitem__('o', 'json')
-            self.dict.__setitem__('dc', str(self.page * 30 + 1))
+            self.dict.__setitem__('dc', str(page * 30 + 1))
             self.dict.__setitem__('api', '/d.js')
         else:
             self.dict.__setitem__('b', '')
+
+    @property
+    def url(self):
+        extra = ''
+        for key, value in self.dict.items():
+            if value is None:
+                continue
+            extra += f'&{key}={value}'
+        return BASE + extra
 
 
 class Search:
@@ -141,7 +153,7 @@ class Search:
             self.handle_api()
 
         self.duck = DuckUrl(query, **kwargs)
-        self.dict_url = self.duck.dict_opt
+        self.duck_url = self.duck.url
         # User-Agent string
         self.headers = {'User-Agent':
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -159,7 +171,7 @@ class Search:
     def get(self):
         """Fetch a request"""
         try:
-            self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+            self.data = requests.get(self.duck_url, headers=self.headers)
         except requests.ConnectionError:
             raise NoInternetError("No internet connection detected.")
 
@@ -173,8 +185,6 @@ class Search:
                   'no_html': '1',
                   }
         base = 'https://api.duckduckgo.com/'
-        # Just because requests library is awesome...
-        # We let it convert the output to JSON
         try:
             data_json = requests.get(base, params=params,
                                      headers={"User-Agent": "ISearch "})
@@ -269,17 +279,17 @@ class Search:
         """
         Fetch the next page and parse results
         """
-        if 'dc' and 's' in self.dict_url.keys():
+        if 'dc' and 's' in self.duck_url.keys():
             # We are not in page 1
             # get the page we are in
-            page = int(self.dict_url.get('s')) // 30
+            page = int(self.duck_url.get('s')) // 30
             # Add one page
             page += 1
             # Request next page
-            self.duck = DuckUrl(self.duck.query, page)
-            self.dict_url = self.duck.dict_opt
+            self.duck = DuckUrl(self.duck.query, page=page)
+            self.duck_url = self.duck.dict_opt
             try:
-                self.data = requests.get(BASE, headers=self.headers, params=self.dict_url)
+                self.data = requests.get(self.duck_url, headers=self.headers)
             except requests.ConnectionError:
                 raise NoInternetError("No internet connection detected")
             self.parse_source()
@@ -289,10 +299,10 @@ class Search:
             # We are in page 1
             page = 2
             # Request next page
-            self.duck = DuckUrl(self.duck.query, page)
-            self.dict_url = self.duck.dict_opt
+            self.duck = DuckUrl(self.duck.query, page=page)
+            self.duck_url = self.duck.dict_opt
             try:
-                self.data = requests.post(BASE, headers=self.headers, params=self.dict_url)
+                self.data = requests.get(self.duck_url, headers=self.headers)
             except requests.ConnectionError:
                 raise NoInternetError("No Internet connection detected")
             self.parse_source()
