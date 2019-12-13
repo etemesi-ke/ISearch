@@ -1,3 +1,4 @@
+import logging
 import webbrowser
 
 import bs4
@@ -81,6 +82,7 @@ class DuckUrl:
                 attr = country if country in country_kl else 'wt-wt'
         else:
             attr = country
+        logging.debug(f'Country code set to {attr}')
         self.dict = {"q": self.qry,
                      # Region specific options
                      'kl': attr,
@@ -90,8 +92,6 @@ class DuckUrl:
                      'kp': safesearch,
                      # HTTPS on
                      'kh': '1',
-                     # Get instead of post
-                     'kg': 'g'
                      }
         self.construct_url()
 
@@ -128,12 +128,7 @@ class DuckUrl:
 
     @property
     def url(self):
-        extra = ''
-        for key, value in self.dict.items():
-            if value is None:
-                continue
-            extra += f'&{key}={value}'
-        return BASE + extra
+        return BASE
 
 
 class Search:
@@ -141,7 +136,7 @@ class Search:
     Unofficial DuckDuckGo search API
     """
 
-    def __init__(self, query: str, num=10, api=False, **kwargs):
+    def __init__(self, query: str, num=10, proxy=None, api=False, **kwargs):
         """
         :param query: Search keyword
         param num: Amount of results to return
@@ -155,11 +150,17 @@ class Search:
         self.duck = DuckUrl(query, **kwargs)
         self.duck_url = self.duck.url
         # User-Agent string
+        if proxy:
+            self.proxy_dict = {'https': proxy}
+        else:
+            self.proxy_dict = {}
+
         self.headers = {'User-Agent':
                             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36'}
         # Amount of results
         self.num = num if num < 30 else 10
+        logging.debug(f'Set value of num to be {num}')
         # List for extra results
         self.rank = 1
         self.first_run = True
@@ -167,12 +168,18 @@ class Search:
         self.count = 0
         self.results = []
         self.listy = []
+        self.init = 0
+        self.number = self.num
 
     def get(self):
         """Fetch a request"""
         try:
-            self.data = requests.get(self.duck_url, headers=self.headers)
+            self.data = requests.post(self.duck_url, headers=self.headers,
+                                      proxies=self.proxy_dict, data=self.duck.dict_opt)
+            logging.debug(f'Request for {self.query} complete')
+            logging.debug(f'Status code is {self.data.status_code}')
         except requests.ConnectionError:
+            logging.exception('No Internet', exc_info=False)
             raise NoInternetError("No internet connection detected.")
 
     def handle_api(self):
@@ -187,11 +194,13 @@ class Search:
         base = 'https://api.duckduckgo.com/'
         try:
             data_json = requests.get(base, params=params,
-                                     headers={"User-Agent": "ISearch "})
+                                     headers={"User-Agent": "ISearch "},
+                                     proxies=self.proxy_dict)
+            logging.debug('DuckDuckGo API request complete')
         except requests.ConnectionError:
+            logging.exception('No Internet Connection detected')
             print('No internet quiting')
             quit(1)
-
         # noinspection PyUnboundLocalVariable
         return data_json
 
@@ -201,6 +210,7 @@ class Search:
         """
         base = 'https://duckduckgo.com/?q={}'.format(self.query.replace(" ", "+"))
         webbrowser.open(base)
+        logging.debug("DuckDuckGo bang request initiated")
 
     def parse_source(self):
         """
@@ -279,32 +289,25 @@ class Search:
         """
         Fetch the next page and parse results
         """
-        if 'dc' and 's' in self.duck_url.keys():
+        if 'dc' and 's' in self.duck.dict_opt.keys():
             # We are not in page 1
             # get the page we are in
-            page = int(self.duck_url.get('s')) // 30
+            page = int(self.duck.dict_opt.get('s')) // 30
             # Add one page
             page += 1
             # Request next page
             self.duck = DuckUrl(self.duck.query, page=page)
-            self.duck_url = self.duck.dict_opt
-            try:
-                self.data = requests.get(self.duck_url, headers=self.headers)
-            except requests.ConnectionError:
-                raise NoInternetError("No internet connection detected")
+            self.duck_url = self.duck.url
+            self.get()
             self.parse_source()
-
             self.next()
         else:
             # We are in page 1
             page = 2
             # Request next page
             self.duck = DuckUrl(self.duck.query, page=page)
-            self.duck_url = self.duck.dict_opt
-            try:
-                self.data = requests.get(self.duck_url, headers=self.headers)
-            except requests.ConnectionError:
-                raise NoInternetError("No Internet connection detected")
+            self.duck_url = self.duck.url
+            self.get()
             self.parse_source()
 
             self.next()
@@ -318,3 +321,7 @@ class Search:
         if self.count < 0:
             raise NoResultsError("No results left")
         return self.listy[self.count]
+
+    @property
+    def current_url(self):
+        return self.duck_url
