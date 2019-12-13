@@ -1,13 +1,10 @@
-# Groove
-Its `Groove-tastically amazing`
-
-![Groove Logo](git-logo.png)
+# ISearch
 
 A command-line Search Engine
 
 Search the world from the comfort of your command line
 
-### Features of Groove And more to come
+### Features of ISearch
 
 - We got a lit command line interface built using urwid checkout that project [here](https://github.com/urwid/urwid)
 - Ability to fetch next results of a search query(ability to fetch previous search results is in the implementation stage)
@@ -15,14 +12,15 @@ Search the world from the comfort of your command line
 - Ability to choose which search engine to use( Right now limited to Bing, Google and DuckDuckGo) 
 - Support for DuckDuckGo [!bangs](https://api.duckduckgo.com/bang)
 - Download box for those times you need to download things quickly.
+-  Output results in xml or JSON
  - Error Handling when there is no internet connection.
  
 ### Installation
 Cloning the Repository
 ```
-git clone https://github.com/stevetyler254/Groove.git
+git clone https://github.com/steve-tyler/ISearch.git
 ```
-Groove requires external libraries to function well and Python 3
+ISearch requires external libraries to function well and Python 3
 
 External libraries can be installed by 
 ```
@@ -34,7 +32,7 @@ pip3 install  selenium bs4 lxml urwid requests
 ```
 
 ### Running 
-In the Groove directory run <code> ./groove.py -h</code>  for available options 
+In the ISearch directory run <code> ./isearch -h</code>  for available options 
 
 ### Problems
 Gnome terminal version 3.34.2 was rendering very weird interfaces
