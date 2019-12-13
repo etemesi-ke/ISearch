@@ -1,20 +1,24 @@
 #!/usr/bin/python3
 
 """
-Main Module for Google  Scraping
-WARNING: This module uses Web browsers(via selenium) hence they are
-        a tad bit slower, but they do bring the best results than making a
-        direct request with requests library
+Sometimes, People write good code, and go away...
 """
-import atexit
+import base64
+import logging
+import sys
+import time
 import urllib.parse
+import uuid
 
 import bs4
 from selenium.common.exceptions import WebDriverException
 
 from Browser import brw
 
-GOOGLE = "https://www.google.com"
+BASE = "https://www.google.com"
+
+ENCODING = sys.getfilesystemencoding()
+
 __name__ = 'Google'
 
 
@@ -26,6 +30,9 @@ class NoResultsError(Exception):
     pass
 
 
+class CaptchaError(Exception):
+    pass
+
 def _build_url(absolute, rel):
     """:param absolute: Absolute part of the url"
         :param rel: Relative part of the url
@@ -36,7 +43,7 @@ def _build_url(absolute, rel):
 def _return_country_url(country):
     """
     Inline function to return a google url with a country code domain
-    :return:A google custom url with a domain name
+    :return:A Google custom url with a domain name
     If the domain name doesn't exist send a warning and revert to global url
     """
     # Data source: https://web.archive.org/web/20170615200243/https://en.wikipedia.org/wiki/List_of_Google_domains
@@ -112,12 +119,13 @@ def _return_country_url(country):
     return country, tld_to_domain_map.get(country)
 
 
-def _replace_spaces_with_plus(string):
+def _replace_spaces_with_plus(string: str) -> str:
     return string.replace(" ", "+")
 
 
 class GoogleUrl:
-    def __init__(self, qry, lang='en', country=None, page=1, **kwargs):
+    def __init__(self, qry: str, country=None, exact=False, page=1,
+                 news=False, filter=False, **kwargs):
         """
         Class for constructing a Google Url
         :param qry:Query to  search
@@ -125,37 +133,72 @@ class GoogleUrl:
         :param country:TLD to search in
         :param page:Fetch result from which page
         """
+        # Enclose the query with quotation mark if explicitly stated
+        # E.g. to remove Google's message 'showing results for....'
         self.query = qry
-        self.lang = lang
         self.country = country
+        self.more = ''
         self.page = page
         self.url_ = ''
-        self.kwargs = ''
-        if kwargs:
-            for i, j in kwargs.items():
-                self.kwargs += '&{key}={value}'.format(key=i, value=j)
+        self.more = ''
+        self.query_dict = {
+            'ie': ENCODING.upper(),
+            'oe': ENCODING.upper()
+        }
+        if news:
+            self.query_dict.__setitem__('tbm', 'nws')
+        if exact:
+            self.query_dict.__setitem__('nfpr', 1)
+        if filter:
+            self.query_dict.__setitem__('filter', 1)
+        for key, value in kwargs.items():
+            self.query_dict.__setitem__(key, value)
+        self._construct_kwargs(**self.query_dict)
+        self.generate_uuid()
         self.construct_url()
+
+    def generate_uuid(self):
+        self._construct_kwargs(sei=
+                               base64.encodebytes(uuid.uuid1().bytes).decode("ascii").rstrip('=\n').replace('/', '_'))
+
+    def _construct_kwargs(self, **kwargs):
+        if kwargs:
+            for key, value in kwargs.items():
+                if value is None:
+                    continue
+                logging.debug(f"Appended '{key}' with the value '{value}' to the url")
+                self.more += f'&{key}={value}'
 
     def construct_url(self):
         """
+        Construct a valid Google search url
         """
         extra = ''
         if self.country:
             country = _return_country_url(self.country)
-            base_ = _build_url("https://" + country[1], "/search")
-            code = country[0]
-            extra += "&gl=" + code
+            try:
+                base_ = _build_url("https://www." + country[1], "/search")
+                code = country[0]
+                extra += "&gl=" + code
+            except TypeError:
+                base_ = _build_url(BASE, '/search')
         else:
-            base_ = _build_url(GOOGLE, "/search")
+            base_ = _build_url(BASE, "/search")
+        logging.debug(f'Base url is  {base_}')
         if self.page > 1:
+            print('asd')
             extra += "&start={}".format(self.page * 10)
         form = "?q=" + _replace_spaces_with_plus(self.query + extra)
-        self.url_ = base_ + form + self.kwargs
+        self.url_ = base_ + form + self.more
+
+    @property
+    def pg(self):
+        return self.page
 
     @property
     def url(self):
+        print(self.url_)
         return self.url_
-
 
 
 class Search:
@@ -163,7 +206,7 @@ class Search:
     Search Google
     """
 
-    def __init__(self, query, **kwargs):
+    def __init__(self, query, proxy=None, num=10, **kwargs):
         """
         Search for google url and parse the source, To construct the google url
         Call the function construct_url
@@ -172,99 +215,51 @@ class Search:
         """
         self.query = query
         self.kwargs = kwargs
+        self.num = num
+
         # Let's make the browser headless
         opt = brw.Options()
         opt.add_argument("--headless")
+        logging.debug('Set browser mode to be headless')
+        if proxy and 'Chrome' in brw.__name__:
+            opt.add_argument(f'--proxy-server={proxy}')
+        before = time.time()
         self.brw = brw.Browser(options=opt)
-        self.google_url = GoogleUrl(self.query, **self.kwargs)
+        after = time.time()
+        logging.debug(f"Launched {self.brw.name} after {after - before} seconds")
+        self.google_url = GoogleUrl(self.query, num=self.num, client=self.brw.name,
+                                    **self.kwargs)
         # Fetch the result
         try:
             self.brw.get(self.google_url.url)
         except WebDriverException:
             # Firefox error
-            self.brw.quit()
+            logging.exception('No Internet', exc_info=False)
+            self.__exit__()
             raise NoInternetError
         # Get the page source
         self.data = self.brw.page_source
-        # Exit when we quit the module
-        atexit.register(self.brw.quit)
+        # Ranking for Google results
+        self.rank = 1
         self.first_run = True
-        self.extra = []
-        self.prev = []
+        # Counting function
+        self.count = 0
+        self.results = []
+        self.listy = []
+        self.init = 0
+        self.number = self.num
 
     @property
     def current_url(self):
         """Returns the current url of the browser page"""
         return self.brw.current_url
 
-    def quit(self):
+    def __exit__(self, **args):
         """
         Quit the browser
         """
         self.brw.quit()
-
-    def next(self):
-        """
-        Fetch the next page and parse it
-        """
-        if self.first_run:
-            self.parse_source()
-            self.first_run = False
-        if self.extra:
-            var = []
-            for i in range(11):
-                try:
-                    var.append(self.extra[0])
-                    self.extra.pop(0)
-                except IndexError:
-                    self.extra = []
-                    break
-            return var
-        else:
-            # There is nothing in the extra, so we fetch the next page
-            # If there is a page in the kwargs, remove it
-            try:
-                self.kwargs.pop('page')
-            except KeyError:
-                pass
-            page = self.google_url.page
-            page += 1
-            self.google_url = GoogleUrl(self.google_url.query, page=page, **self.kwargs)
-            # Fetch the result
-            self.brw.get(self.google_url.url)
-            # Get the page source
-            self.data = self.brw.page_source
-            self.parse_source()
-            return self.next()
-
-    def previous(self):
-        """
-        Fetch the previous result
-        """
-        page = self.google_url.page
-        page = page - 1
-
-        if not page:
-            # We are in page 1, and the user requested for page 0
-            # , which doesn't exist.
-            raise NoResultsError("Page {} doesn't exist".format(
-                page
-            ))
-        else:
-            self.google_url = GoogleUrl(self.google_url.query, page=page, **self.kwargs)
-            # Fetch the result
-            self.brw.get(self.google_url.url)
-            # Get the page source
-            self.data = self.brw.page_source
-            self.parse_source()
-            var = []
-            for i in range(10):
-                try:
-                    var.append(self.extra[0])
-                    self.extra.pop(0)
-                except IndexError:
-                    break
-            return var
+        logging.debug('Browser session closed')
 
     def parse_source(self):
         """
@@ -276,18 +271,130 @@ class Search:
         parser = bs4.BeautifulSoup(self.data, "lxml")
         # Search for the div tag whose class attribute is rc
         try:
+            for p in parser.findAll('div', {"class": 'xpdopen'}):
+                p.decompose()
+        except AttributeError:
+            pass
+        try:
             results = parser.find('div', id='search').findAll('div', {"class": "rc"})
         except AttributeError:
             # Chrome doesn't really go to an error age when there is no internet
             # So this is the best way yo know it
-            self.brw.quit()
+            if 'https://www.google.com/sorry/index?' in self.brw.current_url:
+                # Too many requests sent
+                self.__exit__()
+                raise CaptchaError('Too many requests sent in a short time[ Request redirected to Google ReCaptcha]')
+            logging.error('No internet connection detected', exc_info=False)
+            self.__exit__()
             raise NoInternetError("No internet connection detected")
+
         for result in results:
             # Find link title, Google stores it as a h3 attribute
             title = result.find("h3").text
             # Find link to websites
-            link = (result.find("a"))["href"]
+            link = result.find('div', class_='r').find('a')["href"]
             # Find the Google text
-            text = result.find("span", {"class": "st"}).text
-            self.extra.append((title, link, text))
+            text = result.find("span", {"class": "st"})
+            time_ = text.find('span', class_='f')
+            if time_:
+                r_time = time_.text.replace("-", ' ')
+                time_.decompose()
+            else:
+                r_time = ''
+            self.results.append(
+                {'rank': str(self.rank), 'title': title, 'link': link, 'text': text.text, 'time': r_time})
+            self.rank += 1
+        self.listify()
 
+    def listify(self):
+        """
+        List-ify results
+
+        Take a self.result and create a list with the results
+        Each list contains self.num items or less
+
+        This is called implicitly by self.parse_source()
+        """
+
+        # WARNING: THIS CODE IS MORE DANGEROUS THAN FAILING TO PAY TAXES
+        # CHANGE AT YOUR OWN RISK
+        # AM NOT RESPONSIBLE FOR FIRES, HURRICANES AND YOUR COMPUTER'S
+        #  MEMORY FILLING UP
+
+        while True:
+            try:
+                self.listy.append([self.results[num] for num in range(self.init, self.number)])
+                logging.debug('Appended a result list')
+                self.init += self.num
+                self.number = self.number + self.num
+
+            except IndexError:
+                try:
+                    if len(self.results) > self.init:
+                        self.listy.append([self.results[num] for num in range(self.init, len(self.results))])
+                        logging.debug('Appended a result list')
+                    else:
+                        break
+                except IndexError:
+                    pass
+                break
+
+    def next(self):
+        """
+        Fetch the next page and parse it
+        """
+        if self.first_run:
+            # Fetch first results and parse it.
+            self.parse_source()
+            self.first_run = False
+        try:
+            # Pick an item from listify according to the self.counter
+            var = self.listy[self.count]
+            self.count += 1
+            return var
+        except IndexError:
+            self.next_page()
+            # One count more sine the try function if fails doesn't increment the counter
+            self.count += 1
+            var = self.listy[self.count]
+            return var
+
+    def next_page(self):
+        """
+        Fetch the next page
+        """
+        # There is nothing in the extra, so we fetch the next page
+        # If there is a page in the kwargs, remove it
+
+        try:
+            self.kwargs.pop('page')
+        except KeyError:
+            pass
+        page = self.google_url.pg + 1
+        print(page)
+        self.google_url = GoogleUrl(self.google_url.query, page=page, num=self.num, client=self.brw.name,
+                                    **self.kwargs)
+        # Fetch the result
+        self.brw.get(self.google_url.url)
+        # Get the page source
+        self.data = self.brw.page_source
+        self.parse_source()
+
+    def previous(self):
+        """
+        Fetch the previous result
+        """
+        self.count = self.count - 1
+        # Count gets to zero
+        if self.count < 0:
+            raise NoResultsError("No results left")
+        return self.listy[self.count]
+
+    @property
+    def hits(self):
+        # Get the number of hits.
+        tag = bs4.BeautifulSoup.find_all(attrs={"class": "sd", "id": "resultStats"})[0]
+        hits_text_parts = tag.text.split()
+        if len(hits_text_parts) < 3:
+            return 0
+        return int(hits_text_parts[1].replace(',', '').replace('.', ''))
