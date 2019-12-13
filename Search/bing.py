@@ -1,6 +1,8 @@
 """
-Groove module for bing search
+ISearch module for bing search
 """
+import logging
+
 import bs4
 import requests
 
@@ -57,11 +59,14 @@ lang = (
     "lv",
     "lt", "nl", "no", "pl", "pt", "sv", "ro", "ru", "sr-CS", "sk", "sl", "th", "tr", "uk-UA", "zh-chs", "zh-cht"
 )
-
+# Exclusive country codes
+exc_cc = ('AR', 'AU', 'AT', 'BE', 'BR', 'CA', 'CL', 'DK', 'FI', 'FR', 'DE', 'HK', 'IN', 'ID', 'IT', 'JP',
+          'KR', 'MY', 'MX', 'NL', 'NZ', 'NO', 'PL', 'PT', 'PH', 'RU', 'SA', 'ZA', 'ES', 'SE', 'CH', 'TW',
+          'GB', 'US')
 BASE = 'https://www.bing.com/search'
 
 
-def _replace_spaces_with_plus(string):
+def _replace_spaces_with_plus(string: str) -> str:
     return string.replace(' ', '+')
 
 
@@ -69,66 +74,130 @@ class NoInternetError(ConnectionError):
     pass
 
 
-class NoPageError(Exception):
+class NoResultsError(Exception):
     pass
 
 
 class BingUrl:
-
-    def __init__(self, query, **kwargs):
+    def __init__(self, query, page=1, safe_search=1, **kwargs):
         """
         Class for constructing a  Bing url
         """
         self.query = query
-        if ' loc' or 'location' in kwargs.keys():
-            value = kwargs.get('loc') or kwargs.get('location')
+        self.page = page
+        self.more = ''
+        if self.page > 1:
+            self._calc_page_url()
+        if 'country' in kwargs.keys():
+            value = kwargs.get('country')
             self.loc = loc_dict.get(value)
             if self.loc is None:
-                self.loc = value if value in loc else ''
+                # Set the value to None if the location is not in the dictionary
+                self.loc = value if value in loc else None
+            if self.loc:
+                if self.loc.upper() in exc_cc:
+                    logging.debug(f"Added cc parameter with value{self.loc.upper()}")
+                    self.convert_kwargs(cc=self.loc.upper())
+                else:
+                    logging.debug(f"Appended location string '{self.loc}' to the query ")
+                    self.query += " loc:{}".format(self.loc)
+            else:
+                if value is not None:
+                    logging.warning("No country code for '%s'" % str(value), exc_info=False)
+            kwargs.pop('country')
         # Any other option in kwargs we add as the last part of the url
+        if 'lang' in kwargs.keys():
+            value = kwargs.get('lang')
+            self.lang = value if value.title() in lang else ''
+            logging.debug(f"Appended lang value '{self.lang} to the query")
+            self.query += ' lang:{}'.format(self.lang)
+            kwargs.pop('lang')
         self.kwargs = kwargs
-        self.more = ''
-        for i, j in kwargs.items():
-            self.more += '&{}={}'.format(i, j)
+        self.safe = safe_search
+        self._url = ''
+
         self.construct_url()
 
+    def convert_kwargs(self, **kwargs):
+        for i, j in kwargs.items():
+            if j is None:
+                continue
+            logging.debug(f"Appended '{i}' parameter with the value '{j}' to the url ")
+            self.more += '&{}={}'.format(i, j)
+
+    def _calc_page_url(self):
+        page = self.page - 1
+        # If page is greater than one
+        self.convert_kwargs(first=page * 10)
+
     def construct_url(self):
+        self.safe_search()
+        self.convert_kwargs(**self.kwargs)
         self._url = BASE + "?q=" + _replace_spaces_with_plus(self.query) + self.more
+
+    def safe_search(self):
+        sf_dict = {0: "Off",
+                   1: 'Moderate',
+                   2: 'Strict'
+                   }
+        self.convert_kwargs(safeSearch=sf_dict.get(self.safe))
 
     @property
     def url(self):
         return self._url
 
     @property
-    def page(self):
-        try:
-            page = int(self.kwargs.get('start')) // 10
-            return page + 1
-        except TypeError:
-            # An Unsupported operand for type NoneType and int
-            return 1
+    def result_page(self):
+        return self.page
 
 
 class Search:
     """Unofficial Bing search API"""
 
-    def __init__(self, query, **kwargs):
+    def __init__(self, query, language='EN', proxy=None, num=10, **kwargs):
+        """
+        :param query: Search term
+        :param num: Amount of results to fetch
+        :param kwargs: Additional parameters to pass to the BingUrl API
+        """
         self.query = query
-        self.bing_url = BingUrl(self.query, **kwargs)
+        if proxy:
+            self.proxy_dict = {'https': proxy}
+        else:
+            self.proxy_dict = {}
+        self.num = num if num <= 50 else 10
+        logging.debug(f'Set num to be {self.num}')
+        self.bing_url = BingUrl(self.query, count=self.num, **kwargs)
         self.url = self.bing_url.url
         self.headers = {'User-Agent':
-                            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36  (KHTML, like Gecko) '
                             'Chrome/78.0.3904.108 Safari/537.36',
-                        'Accept-Encoding': 'UTF-8'}
-        try:
-            self.data = requests.get(self.url, params={'go': 'Submit', 'qs': 'ds'}, headers=self.headers)
-        except requests.ConnectionError:
-            raise NoInternetError('No internet connection detected')
+                        'Accept-Encoding': 'UTF-8',
+                        'Accept-Language': language.upper()}
+
+        self.rank = 1
         self.first_run = True
-        self.extra = []
+        self.results = []
+        self.listy = []
+        self.count = -1
+        self.init = 0
+        self.number = self.num
+
+    def get(self):
+        try:
+            self.data = requests.get(self.url, params={'go': 'Submit', 'qs': 'ds'},
+                                     headers=self.headers, proxies=self.proxy_dict)
+            logging.debug(f'Request for{self.query} fetched')
+            logging.debug(f'Status code is {self.data.status_code}')
+        except requests.ConnectionError:
+            logging.exception('No internet', exc_info=False)
+            raise NoInternetError('No internet connection detected')
 
     def parse_source(self):
-        parser = bs4.BeautifulSoup(self.data.content, 'lxml')
+        """
+        Parse a html page extracting titles, texts and links
+        """
+        parser = bs4.BeautifulSoup(self.data.text, 'lxml')
         for each in parser.find('ol').findAll('li', {'class': 'b_algo'}):
             try:
                 title = each.find("h2").text
@@ -140,50 +209,87 @@ class Search:
                 text = each.find('p').text
             except AttributeError:
                 text = each.find('ul', {'class': 'b_vList'}).text
-            self.extra.append((title, link, text))
+            self.results.append({'rank': str(self.rank), 'title': title, "link": link, 'text': text})
+            self.rank += 1
+        self.listify()
+        if not self.listy:
+            raise NoResultsError("No results")
+
+    def listify(self):
+        """
+        List-ify results
+
+        Take a self.result and create a list with the results
+        Each list contains self.num items or less
+
+        This is called implicitly by self.parse_source()
+        """
+
+        # WARNING: THIS CODE IS MORE DANGEROUS THAN FAILING TO PAY TAXES
+        # CHANGE AT YOUR OWN RISK
+        # AM NOT RESPONSIBLE FOR FIRES, HURRICANES AND YOUR COMPUTER'S
+        #  MEMORY FILLING UP
+
+        while True:
+            try:
+                self.listy.append([self.results[num] for num in range(self.init, self.number)])
+                logging.debug('Appended a result list')
+                self.init += self.num
+                self.number = self.number + self.num
+
+            except IndexError:
+                try:
+                    if len(self.results) > self.init:
+                        self.listy.append([self.results[num] for num in range(self.init, len(self.results))])
+                        logging.debug('Appended a result list')
+                    else:
+                        break
+                except IndexError:
+                    pass
+                break
 
     def next(self):
+        """
+        Fetch the next page results
+        :return:
+        """
+
+        # Pick an item from listify
         if self.first_run:
+            self.get()
             self.parse_source()
             self.first_run = False
-        if self.extra:
-            var = []
-            for i in range(10):
-                try:
-                    var.append(self.extra[0])
-                    self.extra.pop(0)
-                except IndexError:
-                    break
+
+        try:
+            self.count += 1
+            var = self.listy[self.count]
             return var
-        else:
-            start = {'start': self.bing_url.page * 10 + 1}
-            self.bing_url = BingUrl(self.query, **start)
-            self.url = self.bing_url.url
-            try:
-                self.data = requests.get(self.url, params={'first': self.bing_url.page * 10 - 11}, headers=self.headers)
-            except requests.ConnectionError:
-                raise NoInternetError("No Internet connection Detected")
-            self.parse_source()
-            return self.next()
+        except IndexError:
+            self.next_page()
+            self.count += 1
+            var = self.listy[self.count]
+            return var
+
+    def next_page(self):
+        """
+        Function to fetch the next raw web page of a result and parse it
+        """
+        self.bing_url = BingUrl(self.query, page=self.bing_url.page + 1)
+        self.url = self.bing_url.url
+        self.get()
+        self.parse_source()
 
     def previous(self):
         """
         Return results of the previous page
-        :return:
         """
-        prev_page = self.bing_url.page - 1
-        if not prev_page:
-            raise NoPageError("Page {} doesn't exist".format(prev_page))
-        else:
-            if prev_page is 1:
-                start = {}
-            else:
-                start = {'start': prev_page * 10 + 1}
-            self.bing_url = BingUrl(self.query, **start)
-            self.url = self.bing_url.url
-            try:
-                self.data = requests.get(self.url, params={'first': self.bing_url.page * 10 - 11}, headers=self.headers)
-            except requests.ConnectionError:
-                raise NoInternetError("No Internet connection Detected")
-            self.parse_source()
-            return self.next()
+        self.count = self.count - 1
+        # Count gets to zero
+        if self.count < 0:
+            raise NoResultsError("No results left")
+        return self.listy[self.count]
+
+    @property
+    def current_url(self):
+        """Return the current url"""
+        return self.url
