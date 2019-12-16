@@ -34,6 +34,9 @@ pip3 install  selenium bs4 lxml urwid requests
 ### Running 
 In the ISearch directory run <code> ./isearch -h</code>  for available options 
 
+##### Interactive mode
+[![Isearch Interactive mode](https://i.ibb.co/rsPjh2K/https-i-ytimg-com-vi-3w-Xb72mw-F-I-maxresdefault.jpg)](https://youtu.be/3wXb72mwF_I "Isearch Interactive mode")
+
 ### Problems
 Gnome terminal version 3.34.2 was rendering very weird interfaces
 
