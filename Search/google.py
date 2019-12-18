@@ -9,6 +9,7 @@ import sys
 import time
 import urllib.parse
 import uuid
+from typing import List, Dict
 
 import bs4
 from selenium.common.exceptions import WebDriverException
@@ -32,6 +33,7 @@ class NoResultsError(Exception):
 
 class CaptchaError(Exception):
     pass
+
 
 def _build_url(absolute, rel):
     """:param absolute: Absolute part of the url"
@@ -186,7 +188,6 @@ class GoogleUrl:
             base_ = _build_url(BASE, "/search")
         logging.debug(f'Base url is  {base_}')
         if self.page > 1:
-            print('asd')
             extra += "&start={}".format(self.page * 10)
         form = "?q=" + _replace_spaces_with_plus(self.query + extra)
         self.url_ = base_ + form + self.more
@@ -197,7 +198,6 @@ class GoogleUrl:
 
     @property
     def url(self):
-        print(self.url_)
         return self.url_
 
 
@@ -250,18 +250,18 @@ class Search:
         self.number = self.num
 
     @property
-    def current_url(self):
+    def current_url(self) -> str:
         """Returns the current url of the browser page"""
         return self.brw.current_url
 
-    def __exit__(self, **args):
+    def __exit__(self, **args) -> None:
         """
         Quit the browser
         """
         self.brw.quit()
         logging.debug('Browser session closed')
 
-    def parse_source(self):
+    def parse_source(self) -> None:
         """
         Parse a Google result
         :return: A list of individual elements containing a
@@ -306,7 +306,7 @@ class Search:
             self.rank += 1
         self.listify()
 
-    def listify(self):
+    def listify(self) -> None:
         """
         List-ify results
 
@@ -333,13 +333,11 @@ class Search:
                     if len(self.results) > self.init:
                         self.listy.append([self.results[num] for num in range(self.init, len(self.results))])
                         logging.debug('Appended a result list')
-                    else:
-                        break
                 except IndexError:
                     pass
                 break
 
-    def next(self):
+    def next(self) -> List[Dict]:
         """
         Fetch the next page and parse it
         """
@@ -359,7 +357,7 @@ class Search:
             var = self.listy[self.count]
             return var
 
-    def next_page(self):
+    def next_page(self) -> None:
         """
         Fetch the next page
         """
@@ -371,7 +369,6 @@ class Search:
         except KeyError:
             pass
         page = self.google_url.pg + 1
-        print(page)
         self.google_url = GoogleUrl(self.google_url.query, page=page, num=self.num, client=self.brw.name,
                                     **self.kwargs)
         # Fetch the result
@@ -380,7 +377,7 @@ class Search:
         self.data = self.brw.page_source
         self.parse_source()
 
-    def previous(self):
+    def previous(self) -> List[Dict]:
         """
         Fetch the previous result
         """

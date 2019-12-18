@@ -2,6 +2,7 @@
 ISearch module for bing search
 """
 import logging
+from typing import List, Dict
 
 import bs4
 import requests
@@ -97,7 +98,7 @@ class BingUrl:
             if self.loc:
                 if self.loc.upper() in exc_cc:
                     logging.debug(f"Added cc parameter with value{self.loc.upper()}")
-                    self.convert_kwargs(cc=self.loc.upper())
+                    self.convert_kwargs(cc=self.loc)
                 else:
                     logging.debug(f"Appended location string '{self.loc}' to the query ")
                     self.query += " loc:{}".format(self.loc)
@@ -193,7 +194,7 @@ class Search:
             logging.exception('No internet', exc_info=False)
             raise NoInternetError('No internet connection detected')
 
-    def parse_source(self):
+    def parse_source(self) -> None:
         """
         Parse a html page extracting titles, texts and links
         """
@@ -205,17 +206,28 @@ class Search:
             except AttributeError:
                 title = each.find("h3").text
                 link = each.find('h3').find('a')['href']
+            date_str = ''
             try:
-                text = each.find('p').text
+                date = each.find('p').find('span', {'class': 'news_dt'})
+                if date:
+                    date_str = date.text.replace('-', '').replace('/', '-')
+                    date.decompose()
+                text = each.find('p').text.lstrip(" · ")
             except AttributeError:
-                text = each.find('ul', {'class': 'b_vList'}).text
-            self.results.append({'rank': str(self.rank), 'title': title, "link": link, 'text': text})
+
+                date = each.find('ul', {'class': 'b_vList'}).find('span', {'class': 'news_dt'})
+                if date:
+                    date_str = date.text.replace('-', ' ').replace('/', ' ')
+                    date.decompose()
+                text = each.find('ul', {'class': 'b_vList'}).text.lstrip(" · ")
+            self.results.append({'rank': str(self.rank), 'title': title, "link": link, 'text': text,
+                                 'time': date_str})
             self.rank += 1
         self.listify()
         if not self.listy:
             raise NoResultsError("No results")
 
-    def listify(self):
+    def listify(self) -> None:
         """
         List-ify results
 
@@ -235,20 +247,18 @@ class Search:
                 self.listy.append([self.results[num] for num in range(self.init, self.number)])
                 logging.debug('Appended a result list')
                 self.init += self.num
-                self.number = self.number + self.num
+                self.number += self.num
 
             except IndexError:
                 try:
                     if len(self.results) > self.init:
                         self.listy.append([self.results[num] for num in range(self.init, len(self.results))])
                         logging.debug('Appended a result list')
-                    else:
-                        break
                 except IndexError:
                     pass
                 break
 
-    def next(self):
+    def next(self) -> List[Dict]:
         """
         Fetch the next page results
         :return:
@@ -279,7 +289,7 @@ class Search:
         self.get()
         self.parse_source()
 
-    def previous(self):
+    def previous(self) -> List[Dict]:
         """
         Return results of the previous page
         """

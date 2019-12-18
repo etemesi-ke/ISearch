@@ -34,5 +34,5 @@ See [Bing Advanced options](http://help.bing.microsoft.com/#apex/18/en-US/10001/
 
 ```
   > Do not include a space after the colon in the keywords
-  > Some features are not aailable in all countries/regions
+  > Some features are not available in all countries/regions
 ```

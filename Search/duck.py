@@ -1,5 +1,6 @@
 import logging
 import webbrowser
+from typing import List, Dict
 
 import bs4
 import requests
@@ -63,7 +64,8 @@ class NoResultsError(Exception):
 
 
 class DuckUrl:
-    def __init__(self, query: str, country='wt-wt', page=1, safesearch=-1):
+    def __init__(self, query: str, country='wt-wt', page=1,
+                 safesearch=-1, exact=False):
         """
         Initialize self
         :type query:str
@@ -74,18 +76,12 @@ class DuckUrl:
         """
         self.page = page
         self.qry = query
+        self.exact = exact
+        self.country = country
         # A normal dictionary if we don't add page attribute
-        if country is not 'wt_wt':
-            try:
-                attr = loc_dict[country]
-            except KeyError:
-                attr = country if country in country_kl else 'wt-wt'
-        else:
-            attr = country
-        logging.debug(f'Country code set to {attr}')
+
         self.dict = {"q": self.qry,
                      # Region specific options
-                     'kl': attr,
                      # Full urls
                      'kaf': '1',
                      # Safe search options
@@ -93,6 +89,7 @@ class DuckUrl:
                      # HTTPS on
                      'kh': '1',
                      }
+
         self.construct_url()
 
     @property
@@ -114,7 +111,8 @@ class DuckUrl:
         Function to implement data for DuckDuckGo requests
         DuckDuckGo /html page accepts  POST requests to return data
         """
-
+        self._construct_exact()
+        self._construct_country()
         if self.page > 1:
             page = self.page - 1
             self.dict.__setitem__("s", str(page * 30))
@@ -125,6 +123,19 @@ class DuckUrl:
             self.dict.__setitem__('api', '/d.js')
         else:
             self.dict.__setitem__('b', '')
+
+    def _construct_country(self):
+        if self.country is not 'wt_wt':
+            try:
+                attr = loc_dict[self.country]
+            except KeyError:
+                attr = self.country if self.country in country_kl else 'wt-wt'
+        else:
+            attr = self.country
+        logging.debug(f'Country code set to {attr}')
+
+    def _construct_exact(self):
+        self.dict.__setitem__('norw', '1')
 
     @property
     def url(self):
@@ -168,6 +179,7 @@ class Search:
         self.count = 0
         self.results = []
         self.listy = []
+
         self.init = 0
         self.number = self.num
 
@@ -204,7 +216,7 @@ class Search:
         # noinspection PyUnboundLocalVariable
         return data_json
 
-    def handle_bang(self):
+    def handle_bang(self) -> None:
         """
         Handle a DuckDuckGo bang request
         """
@@ -212,7 +224,7 @@ class Search:
         webbrowser.open(base)
         logging.debug("DuckDuckGo bang request initiated")
 
-    def parse_source(self):
+    def parse_source(self) -> None:
         """
         Parse a raw web page to return title links and text from it
         """
@@ -220,9 +232,9 @@ class Search:
             self.get()
         source = bs4.BeautifulSoup(self.data.text, "lxml")
         # Results have been exhausted, raise an error
-        if source.find('div', attrs={'class': 'no-results'}):
-            raise ExhaustedResultsError('No more results')
-
+        did_you_mean = source.find('div', id='did_you_mean')
+        if did_you_mean:
+            did_you_mean_ = did_you_mean.text
         # Loop through the results
         for each in source.find("div", id="links").findAll("div", {"class": "result__body"}):
             try:
@@ -230,6 +242,8 @@ class Search:
                 link = each.find("a", attrs={"class": "result__url"})["href"]
                 text = each.find("a", {"class": "result__snippet"}).text
             except AttributeError:
+                if source.find('div', attrs={'class': 'no-results'}) and not each:
+                    raise ExhaustedResultsError('No more results')
                 continue
 
             self.results.append({'rank': str(self.rank), 'title': title, 'link': link, 'text': text})
@@ -238,7 +252,7 @@ class Search:
         # List-ify results
         self.listify()
 
-    def listify(self):
+    def listify(self) -> None:
         """
         List-ify results
 
@@ -247,25 +261,23 @@ class Search:
 
         This is called implicitly by self.parse_source()
         """
-        init = 0
-        number = self.num
         # WARNING: THIS CODE IS MORE DANGEROUS THAN FAILING TO PAY TAXES
         # CHANGE AT YOUR OWN RISK
         # AM NOT RESPONSIBLE FOR FIRES, HURRICANES AND YOUR COMPUTER'S
         #  MEMORY FILLING UP
         while True:
             try:
-                self.listy.append([self.results[num] for num in range(init, number)])
-                init += self.num
-                number = number + self.num
+                self.listy.append([self.results[num] for num in range(self.init, self.number)])
+                self.init += self.num
+                self.number += self.num
             except IndexError:
                 try:
-                    self.listy.append([self.results[num] for num in range(init, len(self.results))])
+                    self.listy.append([self.results[num] for num in range(self.init, len(self.results))])
                 except IndexError:
                     pass
                 break
 
-    def next(self):
+    def next(self) -> List[Dict]:
         """
         Function to fetch the next self.num results
         """
@@ -281,7 +293,7 @@ class Search:
         except IndexError:
             self.next_page()
             # One count more sine the try function if fails doesn't increment the counter
-            self.count += 2
+            self.count += 1
             var = self.listy[self.count]
             return var
 
@@ -312,7 +324,7 @@ class Search:
 
             self.next()
 
-    def previous(self):
+    def previous(self) -> List[Dict]:
         """
         Fetch the results of the previous page:
         """

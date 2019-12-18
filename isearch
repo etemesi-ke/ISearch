@@ -104,27 +104,29 @@ class Cmd:
 
     def pprint_cmd(self):
         col = os.get_terminal_size().columns - 4
-        width = col if col < 200 else 150
+        width = col if col < 190 else 145
         if self.colours:
             red = '\033[91m'
             bold = '\033[1m'
-            underl = '\033[4m'
             blue = '\033[94m'
             purple = '\033[95m'
             endc = '\033[0m'
         else:
             red = ''
             bold = ''
-            underl = ''
             blue = ''
             purple = ''
             endc = ''
 
         store = ''
         for items in self.fetch_next():
-            store += red + bold + items['rank'] + '.  ' + underl + items['title'].strip('\n') + endc + '\n'
+            if int(items['rank']) < 10:
+                space = '.  '
+            else:
+                space = '. '
+            store += bold + items['rank'] + space + red + items['title'].lstrip(' ') + endc + '\n'
             if items.get('time'):
-                store += purple + '\t' + items['time'] + endc + '\n'
+                store += purple + '    ' + items['time'] + endc + '\n'
             store += blue + '    ' + items['link'] + endc + '\n'
             for item in textwrap.wrap(items['text'], width=width):
                 store += "    " + item + "\n"
@@ -172,7 +174,7 @@ class InteractiveCmd:
             ('duck', 'light green,bold', ''),
             ('bing', 'light blue,bold', ''),
 
-            ('title', 'light red, bold,underline', ''),
+            ('title', 'light red, bold', ''),
             ('link', 'light blue,underline', ''),
 
             ('download_title', 'light green, bold,underline', ''),
@@ -322,7 +324,7 @@ class InteractiveCmd:
         if hasattr(self, 'searcher'):
             try:
                 for items in self.searcher.previous():
-                    tbp.append(('title', items['rank'] + '. ' + items['title'] + '\n'))
+                    tbp.append(('title', items['rank'] + '.' + items['title'] + '\n'))
                     tbp.append(('link', items['link'] + '\n'))
                     tbp.append(('', items['text'] + '\n\n'))
                 self.result_bar.set_text(tbp)
@@ -343,12 +345,15 @@ class InteractiveCmd:
         if hasattr(self, 'searcher'):
             try:
                 for items in self.searcher.next():
-                    tbp.append(('title', items['rank'] + '. ' + items['title'] + '\n'))
+                    tbp.append(('title', items['rank'] + '.' + items['title'] + '\n'))
                     tbp.append(('link', items['link'] + '\n'))
                     tbp.append(('', items['text'] + '\n\n'))
                 self.result_bar.set_text(tbp)
             except ConnectionError:
                 self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
+            except self.search_m.ExhaustedResultsError:
+                self.info_bar.set_text(("alert", f"That's all from {self.search_m.__name__}\n"
+                                                 u"No more results :\\"))
         else:
             self.search()
 
@@ -397,6 +402,9 @@ class InteractiveCmd:
                     self.result_bar.set_text(tbp)
                 except ConnectionError:
                     self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
+                except self.search_m.ExhaustedResultsError:
+                    self.info_bar.set_text(("alert", f"That's all from {self.search_m.__name__}\n"
+                                                     u"No more results :\\"))
 
     def exit(self, nothing=None):
         """
