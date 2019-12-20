@@ -21,16 +21,19 @@ try:
     from lxml import etree
 except ImportError:
     import xml.etree.ElementTree as etree
+
 from util.scroll import ScrollBar, Scrollable
 import Search.bing as bing
 import Search.duck as duck
 import Search.google as google
+import Search.google_scholar as scholar
 
 # ADDITIONS: Search engine module
 engines = {
     'google': google,
     "duck": duck,
     'bing': bing,
+    'g-scholar': scholar
 }
 GIT = 'https://www.github.com/steve-tyler/ISearch.git'
 
@@ -38,7 +41,7 @@ ENCODING = sys.getfilesystemencoding()
 # Warn if encoding is something we've never seen
 if ENCODING != 'utf-8':
     warnings.warn('The program has not been tested with any encoding'
-                  'other than utf-8. Your system encoding is %s Proceed at your own caution')
+                  f'other than utf-8. Your system encoding is {ENCODING} Proceed at your own caution')
 TERM = os.get_terminal_size().lines - 6
 
 __version__ = '0.2.0'
@@ -65,6 +68,7 @@ class Cmd:
         if duck_api and 'Duck' in self.engine.__name__:
             data = self.engine.Search(query).handle_api()
             print(data)
+            quit()
         if pprint_json:
             self.printer = self.pprint_json
         elif pprint_xml:
@@ -110,12 +114,16 @@ class Cmd:
             bold = '\033[1m'
             blue = '\033[94m'
             purple = '\033[95m'
+            green = '\033[92m'
+            yellow = '\033[93m'
             endc = '\033[0m'
         else:
             red = ''
             bold = ''
             blue = ''
             purple = ''
+            green = ''
+            yellow = ''
             endc = ''
 
         store = ''
@@ -128,9 +136,15 @@ class Cmd:
             if items.get('time'):
                 store += purple + '    ' + items['time'] + endc + '\n'
             store += blue + '    ' + items['link'] + endc + '\n'
+            if items.get('info'):
+                store += green + '    ' + items['info'] + endc + '\n'
+            if items.get('pdf_link'):
+                store += yellow + '    ' + items['pdf_link'] + endc + '\n'
+
             for item in textwrap.wrap(items['text'], width=width):
                 store += "    " + item + "\n"
             store += "\n"
+
         print(store)
         return ''
 
@@ -173,6 +187,7 @@ class InteractiveCmd:
             ('google', 'light red,bold', ''),
             ('duck', 'light green,bold', ''),
             ('bing', 'light blue,bold', ''),
+            ('scholar', 'light magenta,bold', ''),
 
             ('title', 'light red, bold', ''),
             ('link', 'light blue,underline', ''),
@@ -180,7 +195,11 @@ class InteractiveCmd:
             ('download_title', 'light green, bold,underline', ''),
             ('download_edt', 'bold', ''),
             ('download_btn', 'dark magenta,bold', ''),
-            ('color', 'light green,bold', '')
+            ('color', 'light green,bold', ''),
+
+            ('time', 'light green', ''),
+            ('pdf_link', 'yellow', ''),
+            ('result_info', 'brown', '')
         )
         # Header
         self.header = urwid.Text(('titlebar', u'ISearch\u26A1'), align='center')
@@ -201,8 +220,13 @@ class InteractiveCmd:
         bing_opt = urwid.AttrMap(self.bing_opt, 'bing')
         self.duck_opt = urwid.RadioButton(opt_grp, 'DuckDuckGo', state=True, on_state_change=self.det_search_module,
                                           user_data=None)
+
         duck_opt = urwid.AttrMap(self.duck_opt, 'duck')
-        opt = urwid.GridFlow([bing_opt, duck_opt, google_opt], 20, 4, 1, align='center')
+        self.scholar_opt = urwid.RadioButton(opt_grp, 'Google Scholar',
+                                             on_state_change=self.det_search_module,
+                                             user_data=None)
+        scholar_opt = urwid.AttrMap(self.scholar_opt, 'scholar')
+        opt = urwid.GridFlow([bing_opt, duck_opt, google_opt, scholar_opt], 20, 4, 1, align='center')
 
         # Next button
         next_btn = urwid.GridFlow([urwid.Button('Next', on_press=self.next)], 8, 0, 0, align='center')
@@ -325,8 +349,14 @@ class InteractiveCmd:
             try:
                 for items in self.searcher.previous():
                     tbp.append(('title', items['rank'] + '.' + items['title'] + '\n'))
+                    if items.get('time'):
+                        tbp.append(('time', items['time'] + '\n'))
                     tbp.append(('link', items['link'] + '\n'))
-                    tbp.append(('', items['text'] + '\n\n'))
+                    if items.get('info'):
+                        tbp.append(('result_info', items['info'] + '\n'))
+                    if items.get('pdf_link'):
+                        tbp.append(('pdf_link', items['pdf_link'] + "\n"))
+                    tbp.append(items['text'] + '\n\n')
                 self.result_bar.set_text(tbp)
             except ConnectionError:
                 self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
@@ -346,14 +376,22 @@ class InteractiveCmd:
             try:
                 for items in self.searcher.next():
                     tbp.append(('title', items['rank'] + '.' + items['title'] + '\n'))
+                    if items.get('time'):
+                        tbp.append(('time', items['time'] + '\n'))
                     tbp.append(('link', items['link'] + '\n'))
-                    tbp.append(('', items['text'] + '\n\n'))
+                    if items.get('info'):
+                        tbp.append(('result_info', items['info'] + '\n'))
+                    if items.get('pdf_link'):
+                        tbp.append(('pdf_link', items['pdf_link'] + "\n"))
+                    tbp.append(items['text'] + '\n\n')
                 self.result_bar.set_text(tbp)
             except ConnectionError:
                 self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
             except self.search_m.ExhaustedResultsError:
                 self.info_bar.set_text(("alert", f"That's all from {self.search_m.__name__}\n"
                                                  u"No more results :\\"))
+            except Exception as e:
+                self.info_bar.set_text(('alert', e.__str__()))
         else:
             self.search()
 
@@ -369,6 +407,8 @@ class InteractiveCmd:
             self.search_m = bing
         elif self.duck_opt.state:
             self.search_m = duck
+        elif self.scholar_opt.state:
+            self.search_m = scholar
         # ADDITIONS:Search engine state
 
     def search(self, *args):
@@ -396,15 +436,23 @@ class InteractiveCmd:
                 try:
                     self.searcher = self.search_m.Search(query)
                     for items in self.searcher.next():
-                        tbp.append(('title', items['rank'] + '. ' + items['title'] + '\n'))
+                        tbp.append(('title', items['rank'] + '.' + items['title'] + '\n'))
+                        if items.get('time'):
+                            tbp.append(('time', items['time'] + '\n'))
                         tbp.append(('link', items['link'] + '\n'))
-                        tbp.append(('', items['text'] + '\n\n'))
+                        if items.get('info'):
+                            tbp.append(('result_info', items['info'] + '\n'))
+                        if items.get('pdf_link'):
+                            tbp.append(('pdf_link', items['pdf_link'] + "\n"))
+                        tbp.append(items['text'] + '\n\n')
                     self.result_bar.set_text(tbp)
                 except ConnectionError:
                     self.info_bar.set_text(('alert', "ERROR:No Internet connection detected"))
                 except self.search_m.ExhaustedResultsError:
                     self.info_bar.set_text(("alert", f"That's all from {self.search_m.__name__}\n"
                                                      u"No more results :\\"))
+                except Exception as e:
+                    self.info_bar.set_text(('alert', e.__str__()))
 
     def exit(self, nothing=None):
         """
@@ -566,6 +614,27 @@ def main():
 
     parser.add_argument("-v", "--version", action="version", version=__version__)
     # ADDITIONS: CommandLine Search options
+    scholar_p = sbp.add_parser("g-scholar", description="Google Scholar search in ISearch",
+                               help='Google Scholar Search in ISearch\n\n',
+                               formatter_class=argparse.RawTextHelpFormatter, epilog='Google Scholar ,Your one '
+                                                                                     'stop shop for all nerdy documents\n'
+                                                                                     f"Submit bugs at {GIT}")
+    scholar_p.add_argument('query', help='Search query')
+    scholar_p.add_argument('-d', "--disable-colours", action='store_true',
+                           help="Disable colour output[only when printing to cmd]\n\n")
+    scholar_p.add_argument('-j', '--json', action='store_true', help='Output in json format')
+    scholar_p.add_argument('-x', '--xml', action='store_true', help='Output in xml format\n\n')
+    scholar_p.add_argument('-p', '--page', help="Fetch results from the n'th page", metavar='',
+                           type=int, default=1)
+    scholar_p.add_argument("-n", '--num', help="Fetch 'N' amount of results [default:10]\n\n",
+                           type=int, default=10, metavar='')
+    scholar_p.add_argument('-l', '--lang', help="Language to return results in [default:en]\n\n", type=str,
+                           default='en',
+                           metavar='')
+    scholar_p.add_argument('-s', '--sort', help='Sort by relevance', action='store_true')
+    scholar_p.add_argument('-t', '--time', help='Return files indexed in:'
+                                                "\nYears eg '2015' is a valid time", metavar='')
+
     options = parser.parse_args()
 
     if options.debug:
@@ -606,6 +675,13 @@ def main():
                      # Again, other options
                      country=options.tld, language=options.lang, num=options.num, page=options.page,
                      safe_search=options.safe, freshness=options.time, proxy=proxy)
+        inst_c.printer()
+    elif options.s_name == 'g-scholar':
+        inst_c = Cmd(options.query, engine=options.s_name, pprint_json=options.json, pprint_xml=options.xml,
+                     colours=not options.disable_colours,
+                     # Again, other options
+                     hl=options.lang, num=options.num, page=options.page,
+                     sort_by_date=options.sort, from_date=options.time, proxy=proxy)
         inst_c.printer()
     else:
         parser.print_help()
