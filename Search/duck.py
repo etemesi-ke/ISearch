@@ -210,11 +210,10 @@ class Search:
                                      proxies=self.proxy_dict)
             logging.debug('DuckDuckGo API request complete')
         except requests.ConnectionError:
-            logging.exception('No Internet Connection detected')
-            print('No internet quiting')
+            logging.exception('No Internet Connection detected', exc_info=False)
             quit(1)
         # noinspection PyUnboundLocalVariable
-        return data_json
+        return data_json.text
 
     def handle_bang(self) -> None:
         """
