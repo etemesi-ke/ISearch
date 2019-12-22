@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import List, Dict
 
 import bs4
@@ -104,18 +105,19 @@ class Search:
 
         parser = bs4.BeautifulSoup(self.data.text, 'lxml')
         results = parser.find('div', attrs={'id': 'gs_res_ccl_mid'})
-        for each in results.find_all('div'):
+        for each in results.find_all('div', attrs={'data-rp': re.compile("\d\d?")}):
             if each.find("div", class_='gs_or_ggsm'):
                 pdf_link = each.find("div", class_='gs_or_ggsm').a['href']
             else:
                 pdf_link = ''
             try:
                 title = each.find('h3', class_='gs_rt').find('a').text
+
+                link = each.find('h3', class_='gs_rt').a['href']
+                info = each.find('div', class_='gs_a').text
+                text = each.find('div', class_='gs_rs').text
             except AttributeError:
                 continue
-            link = each.find('h3', class_='gs_rt').a['href']
-            info = each.find('div', class_='gs_a').text
-            text = each.find('div', class_='gs_rs').text
             self.results.append({'rank': str(self.rank), 'pdf_link': pdf_link, 'title': title, 'link': link,
                                  'text': text, 'info': info})
             self.rank += 1

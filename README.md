@@ -6,6 +6,14 @@ Search the world from the comfort of your command line
 
 ### Features of ISearch
 
+- We Support the following search engines:
+    >Google
+    >
+    > DuckDuckGo
+    >
+    > Bing
+    >
+    > Google Scholar
 - We got a lit command line interface built using urwid checkout that project [here](https://github.com/urwid/urwid)
 - Ability to fetch next results of a search query(ability to fetch previous search results is in the implementation stage)
 - Colors (Because we all love colors)
@@ -45,10 +53,6 @@ Feel free to report any issues encountered and also feature requests are welcome
 #### Todo
 - Add a previous button in the Interactive mode
 - Add more search engines
-### Donation
-Donation for good work is highly appreciated
-For those wishing to donate via Paypal that can be done from [here](https://www.paypal.com/cgi_bin/webscr?cmd=_pay-inv&viewtype=altview&id=INV2-5JYK-9F6Z-3W5F-FJSC)
-
 
 
 

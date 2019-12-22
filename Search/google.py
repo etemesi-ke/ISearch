@@ -160,8 +160,8 @@ class GoogleUrl:
         self.construct_url()
 
     def generate_uuid(self):
-        self._construct_kwargs(sei=
-                               base64.encodebytes(uuid.uuid1().bytes).decode("ascii").rstrip('=\n').replace('/', '_'))
+        self._construct_kwargs(ei=
+                               base64.encodebytes(uuid.uuid1().bytes).decode("ascii").rstrip('=\n').replace('/', '-'))
 
     def _construct_kwargs(self, **kwargs):
         if kwargs:
@@ -191,10 +191,6 @@ class GoogleUrl:
             extra += "&start={}".format(self.page * 10)
         form = "?q=" + _replace_spaces_with_plus(self.query + extra)
         self.url_ = base_ + form + self.more
-
-    @property
-    def pg(self):
-        return self.page
 
     @property
     def url(self):
@@ -283,7 +279,7 @@ class Search:
             if 'https://www.google.com/sorry/index?' in self.brw.current_url:
                 # Too many requests sent
                 self.__exit__()
-                raise CaptchaError('Too many requests sent in a short time[ Request redirected to Google ReCaptcha]')
+                raise CaptchaError('Too many requests sent in a short time[Request redirected to Google ReCaptcha]')
             logging.error('No internet connection detected', exc_info=False)
             self.__exit__()
             raise NoInternetError("No internet connection detected")
